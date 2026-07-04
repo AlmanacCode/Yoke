@@ -19,6 +19,7 @@ from yoke.models import (
     Run,
     Session,
     Turn,
+    Usage,
 )
 from yoke.options import RunOptions, SessionOptions
 from yoke.providers.claude_plugins import is_plugin_skill_path, plugin_paths
@@ -116,7 +117,8 @@ class Claude:
             raise YokeError(f"Claude session is not live: {session.id}")
         await client.query(turn.prompt, session_id=session.id)
         async for message in client.receive_response():
-            yield Event(kind=type(message).__name__, raw=message)
+            for event in claude_events(message):
+                yield event
 
     async def get_goal(self, session: Session) -> Goal | None:
         raise UnsupportedFeature("Claude does not expose native readable goals.")
@@ -180,27 +182,238 @@ async def collect_messages(
     messages: AsyncIterator[Any],
     session: Session | None = None,
 ) -> Run:
-    try:
-        from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
-    except ImportError as exc:
-        raise YokeError("Claude support requires `pip install yoke[claude]`.") from exc
-
     events: list[Event] = []
     text: list[str] = []
+    fallback_result: str | None = None
+    usage: Usage | None = None
     async for message in messages:
-        events.append(Event(kind=type(message).__name__, raw=message))
-        if isinstance(message, AssistantMessage):
-            for block in message.content:
-                if isinstance(block, TextBlock):
-                    text.append(block.text)
-        elif isinstance(message, ResultMessage) and message.structured_output:
-            text.append(str(message.structured_output))
+        mapped = claude_events(message)
+        events.extend(mapped)
+        for event in mapped:
+            if event.kind == "text" and event.message is not None:
+                text.append(event.message)
+            if event.usage is not None:
+                usage = event.usage
+        if type(message).__name__ == "ResultMessage":
+            structured_output = getattr(message, "structured_output", None)
+            result_text = getattr(message, "result", None)
+            if structured_output is not None:
+                fallback_result = str(structured_output)
+            elif result_text:
+                fallback_result = str(result_text)
     return Run(
         provider=provider,
-        output="\n".join(text).strip(),
+        output=("\n".join(text).strip() or fallback_result),
         events=tuple(events),
         session=session,
+        usage=usage,
     )
+
+
+def claude_events(message: Any) -> list[Event]:
+    """Map Claude SDK messages into small Yoke events."""
+
+    name = type(message).__name__
+    if name == "AssistantMessage":
+        return assistant_events(message)
+    if name == "ResultMessage":
+        return result_events(message)
+    if name == "SystemMessage":
+        data = getattr(message, "data", {}) or {}
+        session_id = data.get("session_id") if isinstance(data, dict) else None
+        return [
+            Event(
+                kind="provider_session",
+                message=str(getattr(message, "subtype", "system")),
+                provider_session_id=str(session_id) if session_id else None,
+                raw=message,
+            )
+        ]
+    if name == "StreamEvent":
+        event = getattr(message, "event", {}) or {}
+        return [
+            Event(
+                kind="stream_event",
+                message=stream_event_text(event),
+                provider_session_id=getattr(message, "session_id", None),
+                provider_event_id=getattr(message, "uuid", None),
+                provider_parent_tool_use_id=getattr(message, "parent_tool_use_id", None),
+                raw=message,
+            )
+        ]
+    if name == "HookEventMessage":
+        return [
+            Event(
+                kind="hook",
+                message=getattr(message, "hook_event_name", None),
+                provider_session_id=getattr(message, "session_id", None),
+                provider_event_id=getattr(message, "uuid", None),
+                raw=message,
+            )
+        ]
+    if name == "RateLimitEvent":
+        return [
+            Event(
+                kind="rate_limit",
+                message="rate limit updated",
+                provider_session_id=getattr(message, "session_id", None),
+                provider_event_id=getattr(message, "uuid", None),
+                raw=message,
+            )
+        ]
+    return [Event(kind=name, raw=message)]
+
+
+def assistant_events(message: Any) -> list[Event]:
+    events: list[Event] = []
+    for block in getattr(message, "content", []):
+        if type(block).__name__ == "TextBlock":
+            events.append(
+                Event(
+                    kind="text",
+                    message=getattr(block, "text", None),
+                    provider_session_id=getattr(message, "session_id", None),
+                    provider_event_id=first_text(
+                        getattr(message, "uuid", None),
+                        getattr(message, "message_id", None),
+                    ),
+                    provider_parent_tool_use_id=getattr(
+                        message, "parent_tool_use_id", None
+                    ),
+                    raw=message,
+                )
+            )
+    usage = claude_usage(getattr(message, "usage", None))
+    if usage is not None:
+        events.append(
+            Event(
+                kind="usage",
+                message=usage_message(usage),
+                usage=usage,
+                provider_session_id=getattr(message, "session_id", None),
+                provider_event_id=first_text(
+                    getattr(message, "uuid", None),
+                    getattr(message, "message_id", None),
+                ),
+                raw=message,
+            )
+        )
+    return events or [Event(kind="assistant", raw=message)]
+
+
+def result_events(message: Any) -> list[Event]:
+    usage = claude_usage(getattr(message, "usage", None))
+    events: list[Event] = []
+    structured_output = getattr(message, "structured_output", None)
+    result_text = getattr(message, "result", None)
+    if structured_output is not None:
+        events.append(
+            Event(
+                kind="text",
+                message=str(structured_output),
+                provider_session_id=getattr(message, "session_id", None),
+                provider_event_id=getattr(message, "uuid", None),
+                raw=message,
+            )
+        )
+    elif result_text:
+        events.append(
+            Event(
+                kind="result",
+                message=str(result_text),
+                provider_session_id=getattr(message, "session_id", None),
+                provider_event_id=getattr(message, "uuid", None),
+                raw=message,
+            )
+        )
+    if usage is not None:
+        events.append(
+            Event(
+                kind="usage",
+                message=usage_message(usage),
+                usage=usage,
+                provider_session_id=getattr(message, "session_id", None),
+                provider_event_id=getattr(message, "uuid", None),
+                raw=message,
+            )
+        )
+    events.append(
+        Event(
+            kind="done",
+            message=str(getattr(message, "subtype", "done")),
+            provider_session_id=getattr(message, "session_id", None),
+            provider_event_id=getattr(message, "uuid", None),
+            raw=message,
+        )
+    )
+    return events
+
+
+def claude_usage(value: Any) -> Usage | None:
+    if not isinstance(value, dict):
+        return None
+    input_tokens = int_field(value, "input_tokens")
+    cached_input_tokens = first_int_field(
+        value,
+        "cached_input_tokens",
+        "cache_read_input_tokens",
+    )
+    output_tokens = int_field(value, "output_tokens")
+    total = sum(
+        item
+        for item in (input_tokens, cached_input_tokens, output_tokens)
+        if item is not None
+    )
+    return Usage(
+        input_tokens=input_tokens,
+        cached_input_tokens=cached_input_tokens,
+        output_tokens=output_tokens,
+        total_tokens=total or None,
+    )
+
+
+def int_field(value: dict[str, Any], key: str) -> int | None:
+    item = value.get(key)
+    if isinstance(item, bool):
+        return None
+    if isinstance(item, int):
+        return item
+    if isinstance(item, float) and item.is_integer():
+        return int(item)
+    return None
+
+
+def first_int_field(value: dict[str, Any], *keys: str) -> int | None:
+    for key in keys:
+        item = int_field(value, key)
+        if item is not None:
+            return item
+    return None
+
+
+def usage_message(usage: Usage) -> str:
+    if usage.total_tokens is not None:
+        return f"{usage.total_tokens} tokens"
+    return "usage updated"
+
+
+def stream_event_text(event: Any) -> str | None:
+    if not isinstance(event, dict):
+        return None
+    delta = event.get("delta")
+    if isinstance(delta, dict):
+        text = delta.get("text")
+        if isinstance(text, str):
+            return text
+    text = event.get("text")
+    return text if isinstance(text, str) else None
+
+
+def first_text(*values: Any) -> str | None:
+    for value in values:
+        if isinstance(value, str) and value:
+            return value
+    return None
 
 
 def system_prompt(agent: Agent, goal: Goal | None) -> str | None:
