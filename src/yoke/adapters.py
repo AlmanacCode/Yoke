@@ -24,16 +24,40 @@ def adapter_for(provider: Provider, surface: str | None = None) -> ProviderAdapt
     """Return the registered adapter for a provider."""
 
     if surface is not None:
-        try:
-            return _surface_adapters[(provider, surface)]
-        except KeyError as exc:
-            raise AdapterNotFound(
-                f"no Yoke adapter registered for provider {provider!r} surface {surface!r}"
-            ) from exc
+        adapter = _surface_adapters.get((provider, surface))
+        if adapter is not None:
+            return adapter
+        return register(default_adapter(provider, surface))
     try:
         return _default_adapters[provider]
-    except KeyError as exc:
-        raise AdapterNotFound(f"no Yoke adapter registered for provider {provider!r}") from exc
+    except KeyError:
+        return register(default_adapter(provider, surface))
+
+
+def default_adapter(provider: Provider, surface: str | None = None) -> ProviderAdapter:
+    """Construct the built-in adapter for a provider surface."""
+
+    if provider == "claude":
+        if surface not in (None, "claude_python_sdk"):
+            raise AdapterNotFound(
+                f"no built-in Yoke adapter for provider {provider!r} surface {surface!r}"
+            )
+        from yoke.providers.claude import Claude
+
+        return Claude()
+    if provider == "codex":
+        if surface == "codex_app_server":
+            from yoke.providers.codex_app_server import CodexAppServer
+
+            return CodexAppServer()
+        if surface in (None, "codex_cli"):
+            from yoke.providers.codex import Codex
+
+            return Codex()
+        raise AdapterNotFound(
+            f"no built-in Yoke adapter for provider {provider!r} surface {surface!r}"
+        )
+    raise AdapterNotFound(f"no built-in Yoke adapter for provider {provider!r}")
 
 
 def clear_adapters() -> None:

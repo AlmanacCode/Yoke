@@ -4,6 +4,7 @@ from yoke.adapters import adapter_for, clear_adapters, register
 from yoke.capabilities import Capabilities, Capability, Feature, Support
 from yoke.loader import load
 from yoke.models import (
+    Access,
     Agent,
     Approval,
     Effort,
@@ -32,6 +33,7 @@ from yoke.options import ProviderOptions, RunOptions, SessionOptions, WorkflowOp
 
 __all__ = [
     "Agent",
+    "Access",
     "Approval",
     "Capabilities",
     "Capability",

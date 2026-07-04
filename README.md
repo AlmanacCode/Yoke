@@ -10,7 +10,6 @@ the system once, then run it on the surface that fits the job.
 from pathlib import Path
 
 from yoke import Agent, Goal, Harness, Skill
-from yoke.providers import Claude
 
 agent = Agent(
     instructions="You are a careful maintainer. Make small, safe changes.",
@@ -26,7 +25,6 @@ agent = Agent(
 
 result = await (
     Harness(provider="claude", agent=agent, cwd=Path.cwd())
-    .with_adapter(Claude())
     .run("Implement the bundle loader.")
 )
 ```
@@ -99,10 +97,17 @@ The loader understands:
 - subagents in `subagents/<name>/`
 - workflows in `workflows/*.yaml`
 
-Local folder skills are parsed into `Skill(name, description, instructions)`.
-Current Claude and Codex CLI adapters compile those local skills into prompt
-context. That is different from provider-native skill discovery, and Yoke keeps
-that distinction explicit.
+Local folder skills are parsed into `Skill(name, description, path, instructions)`.
+Yoke preserves provider-native discovery when the surface supports it:
+
+| Surface | Packaged folder skills | Inline text skills |
+| --- | --- | --- |
+| Claude Python SDK | local plugin root | prompt-compiled |
+| Codex app-server | `skills/extraRoots/set` | prompt-compiled |
+| Codex CLI | prompt-compiled | prompt-compiled |
+
+That distinction is load-bearing. A native skill can bring supporting files,
+scripts, and provider UI affordances. A prompt-compiled skill is portable text.
 
 ## Surfaces matter
 
@@ -118,9 +123,9 @@ Current surfaces:
 
 | Provider | Surface | Status |
 | --- | --- | --- |
-| Claude | `claude_python_sdk` | real one-shot and live sessions |
+| Claude | `claude_python_sdk` | real one-shot, live sessions, plugins, skills, subagents |
 | Codex | `codex_cli` | real one-shot and resumable sessions |
-| Codex | `codex_app_server` | first real app-server adapter with sessions and mutable goals |
+| Codex | `codex_app_server` | sessions, typed events, native skill roots, mutable goals |
 
 This distinction matters. Codex app-server has primitives such as mutable
 thread goals that `codex exec --json` does not expose. Claude Python SDK has
@@ -137,6 +142,22 @@ and raw provider payloads.
 One important Codex app-server wrinkle: native goals require a non-ephemeral
 thread. If a `Goal` is attached, Yoke starts a persistent app-server thread
 instead of an ephemeral maintenance-style thread.
+
+Yoke has built-in adapters for the common surfaces. The clean path works without
+manual registration:
+
+```python
+harness = Harness(provider="codex", surface="codex_app_server", agent=agent, cwd=repo)
+result = await harness.run("Use the source-grounding skill.")
+```
+
+Embedded apps can still own adapter construction explicitly:
+
+```python
+from yoke.providers import CodexAppServer
+
+harness = harness.with_adapter(CodexAppServer(client_name="my-app"))
+```
 
 ## Sessions
 
@@ -203,7 +224,7 @@ Yoke is inspired by:
 Yoke is being designed and built. The current code is an early runtime, not a
 finished framework.
 
-Current real smokes:
+Current real smokes include:
 
 - `examples/claude_run.py`
 - `examples/claude_session.py`
@@ -211,10 +232,13 @@ Current real smokes:
 - `examples/codex_session.py`
 - `examples/workflow_claude.py`
 - `examples/folder_claude.py`
+- Codex app-server one-shot and sync examples
+- Claude folder skill as native local plugin
+- Codex app-server folder skill as native extra root
 
 Next milestones:
 
-1. Deepen Codex app-server event mapping to match CodeAlmanac's current needs.
-2. Wire app-server skill roots and declared subagents where the protocol supports it.
+1. Deepen Codex app-server resume/thread-read behavior.
+2. Tighten event mapping across Claude and Codex so UIs can render runs uniformly.
 3. Durable workflow semantics inspired by Eve.
-4. CodeAlmanac integration through Yoke imports.
+4. CodeAlmanac integration through Yoke imports once the consuming worktree is ready.
