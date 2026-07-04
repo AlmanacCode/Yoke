@@ -118,6 +118,9 @@ class Claude:
         async for message in client.receive_response():
             yield Event(kind=type(message).__name__, raw=message)
 
+    async def get_goal(self, session: Session) -> Goal | None:
+        raise UnsupportedFeature("Claude does not expose native readable goals.")
+
     async def set_goal(self, session: Session, goal: Goal) -> Session:
         raise UnsupportedFeature("Claude does not expose Codex-style mutable goals.")
 

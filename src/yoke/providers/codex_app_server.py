@@ -67,7 +67,7 @@ class CodexAppServer:
         *,
         rpc_timeout_seconds: float = 30,
         turn_timeout_seconds: float = 30 * 60,
-        ephemeral: bool = True,
+        ephemeral: bool = False,
         client_name: str = "yoke",
         client_title: str = "Yoke",
         client_version: str = "0.0.0",
@@ -166,6 +166,10 @@ class CodexAppServer:
                 yield event
             if step.done:
                 return
+
+    async def get_goal(self, session: Session) -> Goal | None:
+        thread = self._thread(session)
+        return await asyncio.to_thread(self._get_goal, thread)
 
     async def set_goal(self, session: Session, goal: Goal) -> Session:
         thread = self._thread(session)
@@ -356,6 +360,17 @@ class CodexAppServer:
             )
         )
         return yoke_goal(as_record(response.get("goal"))) or goal
+
+    def _get_goal(self, thread: AppServerThread) -> Goal | None:
+        response = as_record(
+            request_rpc(
+                thread.process,
+                "thread/goal/get",
+                {"threadId": thread.thread_id},
+                self.rpc_timeout_seconds,
+            )
+        )
+        return yoke_goal(as_record(response.get("goal")))
 
     def _clear_goal(self, thread: AppServerThread) -> None:
         request_rpc(

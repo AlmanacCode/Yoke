@@ -179,6 +179,9 @@ class Codex:
             usage=usage,
         )
 
+    async def get_goal(self, session: Session) -> Goal | None:
+        raise UnsupportedFeature("Codex mutable goals require app-server protocol.")
+
     async def set_goal(self, session: Session, goal: Goal) -> Session:
         raise UnsupportedFeature("Codex mutable goals require app-server protocol.")
 

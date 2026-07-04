@@ -30,11 +30,10 @@ Important boundary:
 
 `thread/read` is different. It reads stored history without loading or subscribing to a thread. Yoke has not exposed that yet because the public model for "inspect a stored session without running it" should be separate from `Harness.start(...)`.
 
-Resume only works for app-server threads that Codex can load. A Yoke app-server session created with the adapter default may be ephemeral. To create a thread intended for later resume, construct the adapter with:
+Resume only works for app-server threads that Codex can load. Yoke app-server sessions are persistent by default so they can be resumed and can accept native goals later.
+
+For throwaway app-server threads, construct the adapter with:
 
 ```python
-CodexAppServer(ephemeral=False)
+CodexAppServer(ephemeral=True)
 ```
-
-or attach a native app-server `Goal`, which already forces a persistent thread because Codex rejects goals on ephemeral threads.
-

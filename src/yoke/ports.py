@@ -33,6 +33,9 @@ class ProviderAdapter(Protocol):
     async def stream(self, session: Session, turn: Turn) -> AsyncIterator[Event]:
         """Send one turn and stream normalized events."""
 
+    async def get_goal(self, session: Session) -> Goal | None:
+        """Read provider goal state when the surface supports it."""
+
     async def set_goal(self, session: Session, goal: Goal) -> Session:
         """Attach or update a session goal."""
 

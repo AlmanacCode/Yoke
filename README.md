@@ -143,6 +143,18 @@ One important Codex app-server wrinkle: native goals require a non-ephemeral
 thread. If a `Goal` is attached, Yoke starts a persistent app-server thread
 instead of an ephemeral maintenance-style thread.
 
+Native goals are explicit session operations:
+
+```python
+session = await harness.start()
+session = await session.set_goal(Goal("Finish the implementation safely."))
+goal = await session.get_goal()
+session = await session.clear_goal()
+```
+
+Claude and Codex CLI currently receive goals as prompt/task-budget context.
+Codex app-server owns readable mutable thread goals through `thread/goal/*`.
+
 Yoke has built-in adapters for the common surfaces. The clean path works without
 manual registration:
 
@@ -194,8 +206,8 @@ from yoke import SessionOptions
 session = await harness.start(SessionOptions(resume=thread_id))
 ```
 
-For app-server threads you plan to resume later, use
-`CodexAppServer(ephemeral=False)` or attach a native app-server `Goal`.
+Codex app-server sessions are persistent by default so goals can be set later.
+For throwaway app-server threads, construct `CodexAppServer(ephemeral=True)`.
 
 Both paths have been smoke-tested against real local harnesses.
 
@@ -241,6 +253,7 @@ Current real smokes include:
 - `examples/codex_run.py`
 - `examples/codex_session.py`
 - `examples/codex_app_server_resume.py`
+- `examples/codex_app_server_goal.py`
 - `examples/workflow_claude.py`
 - `examples/folder_claude.py`
 - Codex app-server one-shot and sync examples

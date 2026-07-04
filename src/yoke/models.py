@@ -368,6 +368,42 @@ class Session(YokeModel):
 
         return run_blocking(lambda: collect_events(self.stream(prompt)))
 
+    async def get_goal(self) -> Goal | None:
+        """Read provider goal state when supported."""
+
+        from yoke.adapters import adapter_for
+
+        return await adapter_for(self.provider, self.surface).get_goal(self)
+
+    def get_goal_sync(self) -> Goal | None:
+        """Read provider goal state from synchronous code."""
+
+        return run_blocking(lambda: self.get_goal())
+
+    async def set_goal(self, goal: Goal) -> Session:
+        """Attach or update a provider goal and return the updated session."""
+
+        from yoke.adapters import adapter_for
+
+        return await adapter_for(self.provider, self.surface).set_goal(self, goal)
+
+    def set_goal_sync(self, goal: Goal) -> Session:
+        """Attach or update a provider goal from synchronous code."""
+
+        return run_blocking(lambda: self.set_goal(goal))
+
+    async def clear_goal(self) -> Session:
+        """Clear provider goal state and return the updated session."""
+
+        from yoke.adapters import adapter_for
+
+        return await adapter_for(self.provider, self.surface).clear_goal(self)
+
+    def clear_goal_sync(self) -> Session:
+        """Clear provider goal state from synchronous code."""
+
+        return run_blocking(lambda: self.clear_goal())
+
     async def close(self) -> None:
         """Release provider resources for this session."""
 
