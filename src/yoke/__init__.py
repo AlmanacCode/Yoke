@@ -17,10 +17,12 @@ from yoke.models import (
     Session,
     Skill,
     Step,
+    StepResult,
     Surface,
     Tools,
     Turn,
     Workflow,
+    WorkflowRun,
 )
 from yoke.options import ProviderOptions, RunOptions, SessionOptions, WorkflowOptions
 
@@ -44,11 +46,13 @@ __all__ = [
     "SessionOptions",
     "Skill",
     "Step",
+    "StepResult",
     "Surface",
     "Tools",
     "Turn",
     "Workflow",
     "WorkflowOptions",
+    "WorkflowRun",
     "Support",
     "adapter_for",
     "clear_adapters",

@@ -163,6 +163,21 @@ class Workflow(YokeModel):
     steps: tuple[Step, ...] = ()
 
 
+class StepResult(YokeModel):
+    """Result for one workflow step."""
+
+    step: str
+    run: Run
+
+
+class WorkflowRun(YokeModel):
+    """Result for a workflow execution."""
+
+    workflow: str
+    steps: tuple[StepResult, ...] = ()
+    output: str | None = None
+
+
 class Harness(YokeModel):
     """Binds an agent to a provider and working directory.
 
@@ -208,6 +223,23 @@ class Harness(YokeModel):
             options if isinstance(options, SessionOptions) else SessionOptions()
         )
         return await adapter_for(self.provider, self.surface).start(self, session_options)
+
+    async def workflow(
+        self,
+        workflow: Workflow | str,
+        prompt: str = "",
+        options: Any | None = None,
+    ) -> WorkflowRun:
+        """Run a Yoke workflow."""
+
+        from yoke.options import WorkflowOptions
+        from yoke.workflows import run_workflow
+
+        workflow_options = (
+            options if isinstance(options, WorkflowOptions) else WorkflowOptions()
+        )
+        selected = self.agent.workflows[workflow] if isinstance(workflow, str) else workflow
+        return await run_workflow(self, selected, prompt, workflow_options)
 
 
 class Session(YokeModel):

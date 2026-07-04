@@ -91,7 +91,7 @@ def load_workflows(path: Path) -> dict[str, Workflow]:
     if not path.exists():
         return {}
     workflows: dict[str, Workflow] = {}
-    for child in sorted(path.glob("*.yaml")):
+    for child in sorted(path.glob("*.yaml")) + sorted(path.glob("*.yml")):
         data = read_yaml(child)
         name = str(data.get("name") or child.stem)
         steps = tuple(Step(**step) for step in data.get("steps", []))

@@ -133,6 +133,26 @@ ids resumed through `codex exec resume`.
 
 Both paths have been smoke-tested against real local harnesses.
 
+## Workflows
+
+Workflows are Yoke orchestration first:
+
+```python
+workflow = Workflow(
+    name="review",
+    steps=(
+        Step(name="draft", agent="main", prompt="Draft: {input}"),
+        Step(name="review", agent="reviewer", depends_on=("draft",), prompt="{draft}"),
+    ),
+)
+
+result = await harness.workflow(workflow, "write release notes")
+```
+
+This is intentionally not provider-native yet. It composes provider runs and
+subagents through Yoke. Eve remains the reference for a future durable workflow
+runtime.
+
 ## Design references
 
 Yoke is inspired by:
@@ -154,11 +174,12 @@ Current real smokes:
 - `examples/claude_session.py`
 - `examples/codex_run.py`
 - `examples/codex_session.py`
+- `examples/workflow_claude.py`
 
 Next milestones:
 
 1. Codex app-server surface research and adapter skeleton.
-2. Workflow runner shaped by Claude/Eve/Codex reality.
+2. Durable workflow semantics inspired by Eve.
 3. Deeper skills and filesystem authoring.
 4. Native/mutable goals where the surface supports them.
 5. CodeAlmanac integration through Yoke imports.
