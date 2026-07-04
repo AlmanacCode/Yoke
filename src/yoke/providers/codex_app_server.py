@@ -105,11 +105,6 @@ class CodexAppServer:
             await self.close(session)
 
     async def start(self, harness: Harness, options: SessionOptions) -> Session:
-        if options.resume:
-            raise UnsupportedFeature(
-                "codex_app_server resume needs thread/read support before Yoke "
-                "can attach to existing app-server threads."
-            )
         permissions = options.permissions or harness.permissions or harness.agent.permissions
         process = await asyncio.to_thread(self._start_process, harness.cwd)
         goal = options.goal or harness.agent.goal
@@ -239,6 +234,33 @@ class CodexAppServer:
         permissions: Any,
         goal: Goal | None,
     ) -> AppServerThread:
+        self._initialize(process)
+        self._configure_skill_roots(process, harness)
+        method = "thread/resume" if options.resume else "thread/start"
+        params = thread_params(harness, permissions, goal, self.ephemeral)
+        if options.resume:
+            params["threadId"] = options.resume
+            params.pop("ephemeral", None)
+        response = as_record(
+            request_rpc(
+                process,
+                method,
+                params,
+                self.rpc_timeout_seconds,
+            )
+        )
+        thread_id = string_field(as_record(response.get("thread")), "id")
+        if thread_id is None:
+            raise YokeError(f"Codex app-server {method} did not return a thread id")
+        return AppServerThread(
+            process=process,
+            thread_id=thread_id,
+            cwd=harness.cwd,
+            permissions=permissions,
+            effort=options.effort or harness.agent.effort,
+        )
+
+    def _initialize(self, process: JsonRpcLineProcess) -> None:
         request_rpc(
             process,
             "initialize",
@@ -252,6 +274,12 @@ class CodexAppServer:
             },
             self.rpc_timeout_seconds,
         )
+
+    def _configure_skill_roots(
+        self,
+        process: JsonRpcLineProcess,
+        harness: Harness,
+    ) -> None:
         skill_roots = native_skill_roots(harness.agent)
         if skill_roots:
             request_rpc(
@@ -260,31 +288,6 @@ class CodexAppServer:
                 {"extraRoots": [str(root) for root in skill_roots]},
                 self.rpc_timeout_seconds,
             )
-        response = as_record(
-            request_rpc(
-                process,
-                "thread/start",
-                {
-                    "cwd": str(harness.cwd),
-                    "model": harness.agent.model,
-                    "approvalPolicy": approval_policy(permissions),
-                    "sandbox": sandbox_mode(permissions),
-                    "developerInstructions": developer_instructions(harness.agent),
-                    "ephemeral": self.ephemeral if goal is None else False,
-                },
-                self.rpc_timeout_seconds,
-            )
-        )
-        thread_id = string_field(as_record(response.get("thread")), "id")
-        if thread_id is None:
-            raise YokeError("Codex app-server thread/start did not return a thread id")
-        return AppServerThread(
-            process=process,
-            thread_id=thread_id,
-            cwd=harness.cwd,
-            permissions=permissions,
-            effort=options.effort or harness.agent.effort,
-        )
 
     def _run_turn(
         self,
@@ -387,3 +390,19 @@ def flatten_config(value: Any, prefix: str, overrides: list[str]) -> None:
     if not prefix:
         raise ValueError("Codex app-server config overrides must be keyed")
     overrides.append(f"{prefix}={json.dumps(value)}")
+
+
+def thread_params(
+    harness: Harness,
+    permissions: Any,
+    goal: Goal | None,
+    ephemeral: bool,
+) -> dict[str, Any]:
+    return {
+        "cwd": str(harness.cwd),
+        "model": harness.agent.model,
+        "approvalPolicy": approval_policy(permissions),
+        "sandbox": sandbox_mode(permissions),
+        "developerInstructions": developer_instructions(harness.agent),
+        "ephemeral": ephemeral if goal is None else False,
+    }

@@ -185,7 +185,17 @@ finally:
 ```
 
 Claude sessions are live SDK clients. Codex CLI sessions are persisted thread
-ids resumed through `codex exec resume`.
+ids resumed through `codex exec resume`. Codex app-server sessions can resume
+persistent app-server threads by id:
+
+```python
+from yoke import SessionOptions
+
+session = await harness.start(SessionOptions(resume=thread_id))
+```
+
+For app-server threads you plan to resume later, use
+`CodexAppServer(ephemeral=False)` or attach a native app-server `Goal`.
 
 Both paths have been smoke-tested against real local harnesses.
 
@@ -230,6 +240,7 @@ Current real smokes include:
 - `examples/claude_session.py`
 - `examples/codex_run.py`
 - `examples/codex_session.py`
+- `examples/codex_app_server_resume.py`
 - `examples/workflow_claude.py`
 - `examples/folder_claude.py`
 - Codex app-server one-shot and sync examples
