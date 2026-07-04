@@ -1,0 +1,26 @@
+[project]
+name = "yoke"
+version = "0.0.0"
+description = "A provider-neutral harness SDK for agent systems on Claude and Codex."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Almanac" }]
+dependencies = [
+  "pydantic>=2.8",
+]
+
+[project.optional-dependencies]
+claude = ["claude-agent-sdk>=0.1"]
+codex = ["openai-codex>=0.1"]
+dev = ["pytest>=8", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
