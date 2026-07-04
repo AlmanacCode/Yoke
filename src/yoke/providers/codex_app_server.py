@@ -25,6 +25,7 @@ from yoke.providers.codex_app.policy import approval_policy, sandbox_mode, sandb
 from yoke.providers.codex_app.process import JsonRpcLineProcess
 from yoke.providers.codex_app.prompts import developer_instructions
 from yoke.providers.codex_app.rpc import request_rpc
+from yoke.providers.codex_app.skills import native_skill_roots
 
 
 class CodexAppServer:
@@ -49,7 +50,7 @@ class CodexAppServer:
             Feature.DECLARED_SUBAGENTS: Support.UNSUPPORTED,
             Feature.SKILLS: (
                 Support.NATIVE,
-                "App-server has skills APIs; Yoke folder skill wiring is future work.",
+                "Yoke wires packaged skills through app-server extra roots.",
             ),
             Feature.HOOKS: Support.NATIVE,
             Feature.MCP: Support.NATIVE,
@@ -225,6 +226,14 @@ class CodexAppServer:
             },
             self.rpc_timeout_seconds,
         )
+        skill_roots = native_skill_roots(harness.agent)
+        if skill_roots:
+            request_rpc(
+                process,
+                "skills/extraRoots/set",
+                {"extraRoots": [str(root) for root in skill_roots]},
+                self.rpc_timeout_seconds,
+            )
         response = as_record(
             request_rpc(
                 process,

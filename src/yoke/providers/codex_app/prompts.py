@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from yoke.providers.codex_app.skills import is_native_skill_path
+
 
 def developer_instructions(agent: Any) -> str | None:
     parts: list[str] = []
@@ -16,7 +18,11 @@ def developer_instructions(agent: Any) -> str | None:
 
 
 def compiled_skills(agent: Any) -> str | None:
-    skills = [skill for skill in agent.skills if skill.instructions]
+    skills = [
+        skill
+        for skill in agent.skills
+        if skill.instructions and not is_native_skill_path(skill.path)
+    ]
     if not skills:
         return None
     sections = [
