@@ -120,7 +120,7 @@ Current surfaces:
 | --- | --- | --- |
 | Claude | `claude_python_sdk` | real one-shot and live sessions |
 | Codex | `codex_cli` | real one-shot and resumable sessions |
-| Codex | `codex_app_server` | researched; future richer adapter |
+| Codex | `codex_app_server` | first real app-server adapter with sessions and mutable goals |
 
 This distinction matters. Codex app-server has primitives such as mutable
 thread goals that `codex exec --json` does not expose. Claude Python SDK has
@@ -129,6 +129,10 @@ filesystem settings are a separate surface.
 
 Yoke adapters declare capabilities per surface so the SDK does not flatten
 provider-specific strengths into a fake common denominator.
+
+One important Codex app-server wrinkle: native goals require a non-ephemeral
+thread. If a `Goal` is attached, Yoke starts a persistent app-server thread
+instead of an ephemeral maintenance-style thread.
 
 ## Sessions
 
@@ -200,8 +204,7 @@ Current real smokes:
 
 Next milestones:
 
-1. Codex app-server surface research and adapter skeleton.
-2. Durable workflow semantics inspired by Eve.
-3. Deeper skills and filesystem authoring.
-4. Native/mutable goals where the surface supports them.
-5. CodeAlmanac integration through Yoke imports.
+1. Deepen Codex app-server event mapping to match CodeAlmanac's current needs.
+2. Wire app-server skill roots and declared subagents where the protocol supports it.
+3. Durable workflow semantics inspired by Eve.
+4. CodeAlmanac integration through Yoke imports.
