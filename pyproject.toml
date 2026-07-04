@@ -12,7 +12,7 @@ dependencies = [
 
 [project.optional-dependencies]
 claude = ["claude-agent-sdk>=0.1"]
-codex = ["openai-codex>=0.1"]
+codex = []
 dev = ["pytest>=8", "ruff>=0.6"]
 
 [build-system]

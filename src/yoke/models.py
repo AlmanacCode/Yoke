@@ -168,6 +168,18 @@ class Harness(YokeModel):
     cwd: Path
     permissions: Permissions | None = None
 
+    def with_adapter(self, adapter: Any) -> Harness:
+        """Register an adapter and return this harness.
+
+        This keeps examples readable while still letting embedded apps own
+        adapter construction explicitly.
+        """
+
+        from yoke.adapters import register
+
+        register(adapter)
+        return self
+
     async def run(self, prompt: str, options: Any | None = None) -> Run:
         """Execute one convenience run."""
 
