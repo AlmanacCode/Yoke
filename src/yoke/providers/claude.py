@@ -21,6 +21,7 @@ from yoke.models import (
     Turn,
 )
 from yoke.options import RunOptions, SessionOptions
+from yoke.providers.claude_plugins import is_plugin_skill_path, plugin_paths
 
 
 class Claude:
@@ -38,10 +39,9 @@ class Claude:
             Feature.INLINE_SUBAGENTS: Support.NATIVE,
             Feature.DECLARED_SUBAGENTS: Support.COMPILED,
             Feature.SKILLS: (
-                Support.COMPILED,
-                "Claude Python SDK has native skills/plugins, but Yoke folder "
-                "skills currently compile into prompt text unless already "
-                "discoverable by Claude settings/plugins.",
+                Support.NATIVE,
+                "Yoke folder skills load as local Claude plugins; inline skills "
+                "still compile into prompt text.",
             ),
             Feature.HOOKS: Support.NATIVE,
             Feature.MCP: Support.NATIVE,
@@ -139,6 +139,7 @@ def claude_options(harness: Harness, options: RunOptions):
 
     agent = harness.agent
     goal = options.goal or agent.goal
+    plugins = claude_plugins(agent)
     return ClaudeAgentOptions(
         system_prompt=system_prompt(agent, goal),
         cwd=harness.cwd,
@@ -162,7 +163,8 @@ def claude_options(harness: Harness, options: RunOptions):
             for name, subagent in agent.subagents.items()
         }
         or None,
-        skills=skill_names(agent) or None,
+        plugins=plugins or [],
+        skills="all" if plugins else skill_names(agent) or None,
         output_format=output_format(options.output_schema),
         task_budget={"total": goal.token_budget}
         if goal and goal.token_budget is not None
@@ -216,7 +218,11 @@ def system_prompt(agent: Agent, goal: Goal | None) -> str | None:
 
 
 def compiled_skills(agent: Agent) -> str | None:
-    skills = [skill for skill in agent.skills if skill.instructions]
+    skills = [
+        skill
+        for skill in agent.skills
+        if skill.instructions and not is_plugin_skill_path(skill.path)
+    ]
     if not skills:
         return None
     sections = [
@@ -305,3 +311,10 @@ def skill_names(agent: Agent) -> list[str]:
         elif skill.path:
             names.append(skill.path.stem)
     return names
+
+
+def claude_plugins(agent: Agent) -> list[dict[str, str]]:
+    return [
+        {"type": "local", "path": str(path)}
+        for path in plugin_paths(agent)
+    ]

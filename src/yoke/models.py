@@ -179,6 +179,7 @@ class Permissions(YokeModel):
 class Agent(YokeModel):
     """Agent definition that can compile to Claude or Codex."""
 
+    root: Path | None = None
     instructions: str | None = None
     description: str | None = None
     model: str | None = None

@@ -33,6 +33,7 @@ def load(path: str | Path) -> Agent:
     workflows = load_workflows(root / WORKFLOWS_DIR)
     goal = config.get("goal")
     return Agent(
+        root=root,
         instructions=instructions or config.get("instructions"),
         description=config.get("description"),
         model=optional_inherit(config.get("model")),
