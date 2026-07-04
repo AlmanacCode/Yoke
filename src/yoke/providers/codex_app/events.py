@@ -6,6 +6,7 @@ import base64
 import binascii
 import time
 from dataclasses import dataclass, field
+from typing import Iterator
 
 from pydantic import JsonValue
 
@@ -30,6 +31,12 @@ class TurnResult:
     usage: Usage | None = None
 
 
+@dataclass
+class TurnStep:
+    events: list[Event] = field(default_factory=list)
+    done: bool = False
+
+
 def read_turn(
     process: JsonRpcLineProcess,
     thread_id: str,
@@ -38,6 +45,32 @@ def read_turn(
 ) -> TurnResult:
     result = TurnResult()
     deadline = time.monotonic() + timeout_seconds
+    for step in iter_turn(process, thread_id, turn_id, result, deadline):
+        result.events.extend(step.events)
+    return result
+
+
+def iter_turn(
+    process: JsonRpcLineProcess,
+    thread_id: str,
+    turn_id: str | None,
+    result: TurnResult,
+    deadline: float,
+) -> Iterator[TurnStep]:
+    while True:
+        step = read_turn_step(process, thread_id, turn_id, result, deadline)
+        yield step
+        if step.done:
+            return
+
+
+def read_turn_step(
+    process: JsonRpcLineProcess,
+    thread_id: str,
+    turn_id: str | None,
+    result: TurnResult,
+    deadline: float,
+) -> TurnStep:
     while True:
         message = process.read_until(deadline, "turn timed out")
         if is_server_request(message):
@@ -46,7 +79,7 @@ def read_turn(
         method = string_field(message, "method")
         if method is None:
             continue
-        result.events.extend(map_notification(message, result))
+        events = map_notification(message, result)
         if method == "error":
             detail = result.output or "Codex app-server error"
             raise YokeError(detail)
@@ -54,8 +87,10 @@ def read_turn(
             error = turn_error(message)
             if error:
                 raise YokeError(error)
-            result.events.append(Event(kind="done", message="codex completed"))
-            return result
+            events.append(Event(kind="done", message="codex completed"))
+            return TurnStep(events=events, done=True)
+        if events:
+            return TurnStep(events=events)
 
 
 def map_notification(notification: JsonObject, result: TurnResult) -> list[Event]:

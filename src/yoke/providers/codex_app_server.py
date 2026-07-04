@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,7 +19,7 @@ from yoke.capabilities import Capabilities, Feature, Support
 from yoke.errors import UnsupportedFeature, YokeError
 from yoke.models import Event, Goal, Harness, Provider, Run, Session, Turn
 from yoke.options import RunOptions, SessionOptions
-from yoke.providers.codex_app.events import TurnResult, read_turn
+from yoke.providers.codex_app.events import TurnResult, read_turn, read_turn_step
 from yoke.providers.codex_app.fields import as_record, string_field
 from yoke.providers.codex_app.goals import app_goal_status, yoke_goal
 from yoke.providers.codex_app.policy import approval_policy, sandbox_mode, sandbox_policy
@@ -38,8 +39,8 @@ class CodexAppServer:
             Feature.ONE_SHOT: Support.NATIVE,
             Feature.SESSION: Support.NATIVE,
             Feature.STREAMING: (
-                Support.EMULATED,
-                "The protocol streams notifications; this adapter currently collects.",
+                Support.NATIVE,
+                "Yoke yields app-server notifications as they arrive.",
             ),
             Feature.STRUCTURED_OUTPUT: Support.NATIVE,
             Feature.FILESYSTEM_AGENT: Support.UNSUPPORTED,
@@ -142,9 +143,34 @@ class CodexAppServer:
         return await self._send(session, turn, output_schema=None)
 
     async def stream(self, session: Session, turn: Turn) -> AsyncIterator[Event]:
-        run = await self.send(session, turn)
-        for event in run.events:
-            yield event
+        thread = self._thread(session)
+        result = TurnResult()
+        turn_id = await asyncio.to_thread(
+            self._start_turn,
+            thread,
+            session,
+            turn,
+            None,
+        )
+        yield Event(
+            kind="provider_session",
+            message=f"codex provider session {thread.thread_id}",
+            provider_session_id=thread.thread_id,
+        )
+        deadline = time.monotonic() + self.turn_timeout_seconds
+        while True:
+            step = await asyncio.to_thread(
+                read_turn_step,
+                thread.process,
+                thread.thread_id,
+                turn_id,
+                result,
+                deadline,
+            )
+            for event in step.events:
+                yield event
+            if step.done:
+                return
 
     async def set_goal(self, session: Session, goal: Goal) -> Session:
         thread = self._thread(session)
@@ -267,6 +293,21 @@ class CodexAppServer:
         turn: Turn,
         output_schema: dict[str, Any] | None,
     ) -> TurnResult:
+        turn_id = self._start_turn(thread, session, turn, output_schema)
+        return read_turn(
+            thread.process,
+            thread.thread_id,
+            turn_id,
+            self.turn_timeout_seconds,
+        )
+
+    def _start_turn(
+        self,
+        thread: AppServerThread,
+        session: Session,
+        turn: Turn,
+        output_schema: dict[str, Any] | None,
+    ) -> str | None:
         response = as_record(
             request_rpc(
                 thread.process,
@@ -295,13 +336,7 @@ class CodexAppServer:
                 self.rpc_timeout_seconds,
             )
         )
-        turn_id = string_field(as_record(response.get("turn")), "id")
-        return read_turn(
-            thread.process,
-            thread.thread_id,
-            turn_id,
-            self.turn_timeout_seconds,
-        )
+        return string_field(as_record(response.get("turn")), "id")
 
     def _set_goal(self, thread: AppServerThread, goal: Goal) -> Goal:
         response = as_record(
