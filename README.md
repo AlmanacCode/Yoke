@@ -130,6 +130,10 @@ filesystem settings are a separate surface.
 Yoke adapters declare capabilities per surface so the SDK does not flatten
 provider-specific strengths into a fake common denominator.
 
+Events use small Yoke nouns instead of provider prose scraping. `Event` can carry
+`Tool` display metadata, `Usage`, provider session ids, source thread/turn ids,
+and raw provider payloads.
+
 One important Codex app-server wrinkle: native goals require a non-ephemeral
 thread. If a `Goal` is attached, Yoke starts a persistent app-server thread
 instead of an ephemeral maintenance-style thread.
@@ -140,6 +144,12 @@ One-shot is the convenience path:
 
 ```python
 result = await harness.run("Diagnose the failing test.")
+```
+
+Plain scripts can use the sync twin:
+
+```python
+result = harness.run_sync("Diagnose the failing test.")
 ```
 
 Sessions are the multi-turn path:

@@ -6,10 +6,11 @@ mechanics belong behind provider ports, not in these objects.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -21,12 +22,29 @@ Surface = Literal[
     "codex_typescript_sdk",
     "codex_app_server",
 ]
+T = TypeVar("T")
 
 
 class YokeModel(BaseModel):
     """Base model for public Yoke values."""
 
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
+
+
+def run_blocking(factory: Any) -> T:
+    """Run an async Yoke operation from synchronous code."""
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(factory())
+    raise RuntimeError("Yoke sync methods cannot run inside an active event loop.")
+
+
+async def collect_events(events: AsyncIterator[Event]) -> tuple[Event, ...]:
+    """Collect an async event stream for sync callers."""
+
+    return tuple([event async for event in events])
 
 
 class Effort(StrEnum):
@@ -62,6 +80,30 @@ class GoalStatus(StrEnum):
     USAGE_LIMITED = "usage_limited"
     BUDGET_LIMITED = "budget_limited"
     COMPLETE = "complete"
+
+
+class ToolKind(StrEnum):
+    """Provider-neutral tool display kind."""
+
+    READ = "read"
+    WRITE = "write"
+    EDIT = "edit"
+    SEARCH = "search"
+    SHELL = "shell"
+    MCP = "mcp"
+    WEB = "web"
+    AGENT = "agent"
+    IMAGE = "image"
+    UNKNOWN = "unknown"
+
+
+class ToolStatus(StrEnum):
+    """Provider-neutral tool lifecycle status."""
+
+    STARTED = "started"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    DECLINED = "declined"
 
 
 class Goal(YokeModel):
@@ -232,6 +274,11 @@ class Harness(YokeModel):
         run_options = options if isinstance(options, RunOptions) else RunOptions()
         return await adapter_for(self.provider, self.surface).run(self, prompt, run_options)
 
+    def run_sync(self, prompt: str, options: Any | None = None) -> Run:
+        """Execute one convenience run from synchronous code."""
+
+        return run_blocking(lambda: self.run(prompt, options))
+
     async def start(self, options: Any | None = None) -> Session:
         """Start or resume a provider session."""
 
@@ -242,6 +289,11 @@ class Harness(YokeModel):
             options if isinstance(options, SessionOptions) else SessionOptions()
         )
         return await adapter_for(self.provider, self.surface).start(self, session_options)
+
+    def start_sync(self, options: Any | None = None) -> Session:
+        """Start or resume a provider session from synchronous code."""
+
+        return run_blocking(lambda: self.start(options))
 
     async def workflow(
         self,
@@ -259,6 +311,16 @@ class Harness(YokeModel):
         )
         selected = self.agent.workflows[workflow] if isinstance(workflow, str) else workflow
         return await run_workflow(self, selected, prompt, workflow_options)
+
+    def workflow_sync(
+        self,
+        workflow: Workflow | str,
+        prompt: str = "",
+        options: Any | None = None,
+    ) -> WorkflowRun:
+        """Run a Yoke workflow from synchronous code."""
+
+        return run_blocking(lambda: self.workflow(workflow, prompt, options))
 
 
 class Session(YokeModel):
@@ -285,6 +347,11 @@ class Session(YokeModel):
             self, Turn(prompt=prompt)
         )
 
+    def run_sync(self, prompt: str) -> Run:
+        """Send one turn from synchronous code."""
+
+        return run_blocking(lambda: self.run(prompt))
+
     async def stream(self, prompt: str) -> AsyncIterator[Event]:
         """Send one turn and stream normalized events."""
 
@@ -295,12 +362,22 @@ class Session(YokeModel):
         ):
             yield event
 
+    def stream_sync(self, prompt: str) -> tuple[Event, ...]:
+        """Collect stream events from synchronous code."""
+
+        return run_blocking(lambda: collect_events(self.stream(prompt)))
+
     async def close(self) -> None:
         """Release provider resources for this session."""
 
         from yoke.adapters import adapter_for
 
         await adapter_for(self.provider, self.surface).close(self)
+
+    def close_sync(self) -> None:
+        """Release provider resources from synchronous code."""
+
+        return run_blocking(lambda: self.close())
 
 
 class Turn(YokeModel):
@@ -310,11 +387,49 @@ class Turn(YokeModel):
     id: str | None = None
 
 
+class Tool(YokeModel):
+    """Display metadata for one provider tool item."""
+
+    kind: ToolKind = ToolKind.UNKNOWN
+    title: str | None = None
+    path: str | None = None
+    command: str | None = None
+    cwd: str | None = None
+    status: ToolStatus | None = None
+    exit_code: int | None = None
+    duration_ms: int | None = None
+    summary: str | None = None
+
+
+class Usage(YokeModel):
+    """Token usage reported by a provider."""
+
+    input_tokens: int | None = None
+    cached_input_tokens: int | None = None
+    output_tokens: int | None = None
+    reasoning_output_tokens: int | None = None
+    total_tokens: int | None = None
+    total_processed_tokens: int | None = None
+    max_tokens: int | None = None
+
+
 class Event(YokeModel):
     """Normalized provider event."""
 
     kind: str
     message: str | None = None
+    tool_id: str | None = None
+    tool_name: str | None = None
+    tool_input: str | None = None
+    tool: Tool | None = None
+    tool_result: Any | None = None
+    tool_is_error: bool | None = None
+    usage: Usage | None = None
+    provider_session_id: str | None = None
+    provider_event_id: str | None = None
+    provider_parent_tool_use_id: str | None = None
+    source_thread_id: str | None = None
+    source_turn_id: str | None = None
     raw: object | None = None
 
 
@@ -325,4 +440,4 @@ class Run(YokeModel):
     output: str | None = None
     events: tuple[Event, ...] = ()
     session: Session | None = None
-    usage: dict[str, Any] | None = None
+    usage: Usage | dict[str, Any] | None = None
