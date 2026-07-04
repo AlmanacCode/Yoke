@@ -34,6 +34,7 @@ class Support(StrEnum):
     COMPILED = "compiled"
     EMULATED = "emulated"
     UNSUPPORTED = "unsupported"
+    UNKNOWN = "unknown"
 
 
 class Capability(YokeModel):

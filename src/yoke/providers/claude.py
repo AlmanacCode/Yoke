@@ -37,7 +37,12 @@ class Claude:
             Feature.FILESYSTEM_AGENT: Support.NATIVE,
             Feature.INLINE_SUBAGENTS: Support.NATIVE,
             Feature.DECLARED_SUBAGENTS: Support.COMPILED,
-            Feature.SKILLS: Support.NATIVE,
+            Feature.SKILLS: (
+                Support.COMPILED,
+                "Claude Python SDK has native skills/plugins, but Yoke folder "
+                "skills currently compile into prompt text unless already "
+                "discoverable by Claude settings/plugins.",
+            ),
             Feature.HOOKS: Support.NATIVE,
             Feature.MCP: Support.NATIVE,
             Feature.GOAL: (
