@@ -91,12 +91,23 @@ class Skill(YokeModel):
     """Reusable capability loaded from text or a folder."""
 
     name: str | None = None
+    description: str | None = None
     path: Path | None = None
     instructions: str | None = None
 
     @classmethod
     def from_path(cls, path: str | Path, name: str | None = None) -> Skill:
         return cls(path=Path(path), name=name)
+
+    @classmethod
+    def from_text(
+        cls,
+        instructions: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> Skill:
+        return cls(name=name, description=description, instructions=instructions)
 
     @model_validator(mode="after")
     def require_source(self) -> Skill:
@@ -137,6 +148,14 @@ class Agent(YokeModel):
     subagents: dict[str, Agent] = Field(default_factory=dict)
     workflows: dict[str, Workflow] = Field(default_factory=dict)
     options: dict[str, Any] = Field(default_factory=dict)
+
+    @classmethod
+    def from_folder(cls, path: str | Path) -> Agent:
+        """Load an agent from a Yoke folder."""
+
+        from yoke.loader import load
+
+        return load(path)
 
     @model_validator(mode="after")
     def require_useful_body(self) -> Agent:

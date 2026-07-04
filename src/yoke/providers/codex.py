@@ -103,7 +103,7 @@ class Codex:
         if session.agent is None or session.cwd is None:
             raise YokeError("Codex CLI session needs agent and cwd to resume.")
         async for event in self.cli.run(
-            prompt=codex_prompt(turn.prompt, session.goal),
+            prompt=codex_prompt(turn.prompt, session.goal, session.agent),
             cwd=session.cwd,
             thread_id=session.id,
             model=session.agent.model,
@@ -135,7 +135,7 @@ class Codex:
         session: Session | None = None
 
         async for event in self.cli.run(
-            prompt=codex_prompt(prompt, goal),
+            prompt=codex_prompt(prompt, goal, agent),
             cwd=cwd,
             thread_id=thread_id,
             model=agent.model,
@@ -189,15 +189,35 @@ class Codex:
         return None
 
 
-def codex_prompt(prompt: str, goal: Goal | None) -> str:
-    if goal is None:
-        return prompt
-    return (
-        f"Goal: {goal.objective}\n\n"
-        "Work toward this goal and stop when it is complete, blocked, or unsafe "
-        "to continue.\n\n"
-        f"User request:\n{prompt}"
-    )
+def codex_prompt(prompt: str, goal: Goal | None, agent: Any | None = None) -> str:
+    parts: list[str] = []
+    if agent is not None:
+        skill_text = compiled_skills(agent)
+        if skill_text:
+            parts.append(skill_text)
+    if goal is not None:
+        parts.append(
+            f"Goal: {goal.objective}\n\n"
+            "Work toward this goal and stop when it is complete, blocked, or unsafe "
+            "to continue."
+        )
+    parts.append(f"User request:\n{prompt}")
+    return "\n\n".join(parts)
+
+
+def compiled_skills(agent: Any) -> str | None:
+    skills = [skill for skill in agent.skills if skill.instructions]
+    if not skills:
+        return None
+    sections = [
+        "Available Yoke skills follow. Treat each skill as optional procedure context; "
+        "use it only when the user request matches its description."
+    ]
+    for skill in skills:
+        header = skill.name or "skill"
+        description = f"\nDescription: {skill.description}" if skill.description else ""
+        sections.append(f"## {header}{description}\n\n{skill.instructions}")
+    return "\n\n".join(sections)
 
 
 def sandbox_mode(permissions: Any) -> str:

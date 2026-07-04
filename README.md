@@ -83,6 +83,27 @@ agent/
 
 Neither form should be a second-class export of the other.
 
+Folder agents can be loaded directly:
+
+```python
+agent = Agent.from_folder("agent")
+```
+
+The loader understands:
+
+- `agent.yaml`
+- `instructions.md`
+- sorted markdown files in `instructions/`
+- flat skills in `skills/*.md`
+- packaged skills in `skills/<name>/SKILL.md`
+- subagents in `subagents/<name>/`
+- workflows in `workflows/*.yaml`
+
+Local folder skills are parsed into `Skill(name, description, instructions)`.
+Current Claude and Codex CLI adapters compile those local skills into prompt
+context. That is different from provider-native skill discovery, and Yoke keeps
+that distinction explicit.
+
 ## Surfaces matter
 
 Yoke does not pretend that "Claude" or "Codex" is one uniform thing.
@@ -175,6 +196,7 @@ Current real smokes:
 - `examples/codex_run.py`
 - `examples/codex_session.py`
 - `examples/workflow_claude.py`
+- `examples/folder_claude.py`
 
 Next milestones:
 

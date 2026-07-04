@@ -1,0 +1,6 @@
+name: tiny
+description: Exercise a folder-loaded workflow.
+steps:
+  - name: answer
+    agent: main
+    prompt: "Use the source-grounding skill. Say exactly: grounded"
