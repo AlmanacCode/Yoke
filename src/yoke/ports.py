@@ -38,3 +38,6 @@ class ProviderAdapter(Protocol):
 
     async def clear_goal(self, session: Session) -> Session:
         """Clear a session goal."""
+
+    async def close(self, session: Session) -> None:
+        """Release provider resources for a session."""

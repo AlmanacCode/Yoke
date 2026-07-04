@@ -48,8 +48,6 @@ class CodexCli:
         schema_path: Path | None = None
         try:
             args = [self.executable, "exec", "--json", "--cd", str(cwd)]
-            if thread_id:
-                args.extend(["resume", thread_id])
             if model:
                 args.extend(["--model", model])
             if sandbox:
@@ -76,6 +74,8 @@ class CodexCli:
             if output_schema is not None:
                 schema_path = write_schema(output_schema)
                 args.extend(["--output-schema", str(schema_path)])
+            if thread_id:
+                args.extend(["resume", thread_id])
             args.append("-")
 
             env = dict(os.environ)

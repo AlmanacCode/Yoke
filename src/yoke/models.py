@@ -6,6 +6,7 @@ mechanics belong behind provider ports, not in these objects.
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
@@ -210,11 +211,45 @@ class Harness(YokeModel):
 
 
 class Session(YokeModel):
-    """Provider session handle."""
+    """Runtime session handle.
+
+    `Session` is serializable enough to resume simple providers, but adapters
+    may keep live provider state behind the handle.
+    """
 
     provider: Provider
+    surface: Surface | str | None = None
     id: str
+    agent: Agent | None = None
+    cwd: Path | None = None
+    permissions: Permissions | None = None
     goal: Goal | None = None
+
+    async def run(self, prompt: str) -> Run:
+        """Send one turn and collect the result."""
+
+        from yoke.adapters import adapter_for
+
+        return await adapter_for(self.provider, self.surface).send(
+            self, Turn(prompt=prompt)
+        )
+
+    async def stream(self, prompt: str) -> AsyncIterator[Event]:
+        """Send one turn and stream normalized events."""
+
+        from yoke.adapters import adapter_for
+
+        async for event in adapter_for(self.provider, self.surface).stream(
+            self, Turn(prompt=prompt)
+        ):
+            yield event
+
+    async def close(self) -> None:
+        """Release provider resources for this session."""
+
+        from yoke.adapters import adapter_for
+
+        await adapter_for(self.provider, self.surface).close(self)
 
 
 class Turn(YokeModel):

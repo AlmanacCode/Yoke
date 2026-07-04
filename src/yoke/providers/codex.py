@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from yoke.capabilities import Capabilities, Feature, Support
 from pathlib import Path
 from typing import Any
 
+from yoke.capabilities import Capabilities, Feature, Support
 from yoke.errors import UnsupportedFeature, YokeError
 from yoke.models import Event, Goal, Harness, Provider, Run, Session, Turn
 from yoke.options import RunOptions, SessionOptions
@@ -21,12 +21,12 @@ class Codex:
         {
             Feature.ONE_SHOT: Support.NATIVE,
             Feature.SESSION: (
-                Support.UNSUPPORTED,
-                "codex exec can resume threads, but Yoke has not exposed live sessions yet.",
+                Support.COMPILED,
+                "codex_cli sessions are resumable exec threads, not live processes.",
             ),
             Feature.STREAMING: (
-                Support.UNSUPPORTED,
-                "codex exec emits JSONL, but this adapter currently buffers run().",
+                Support.NATIVE,
+                "codex exec emits JSONL events for each turn.",
             ),
             Feature.STRUCTURED_OUTPUT: Support.NATIVE,
             Feature.FILESYSTEM_AGENT: Support.UNSUPPORTED,
@@ -57,31 +57,108 @@ class Codex:
         self.additional_directories = tuple(Path(path) for path in additional_directories)
 
     async def run(self, harness: Harness, prompt: str, options: RunOptions) -> Run:
+        agent = harness.agent
+        permissions = options.permissions or harness.permissions or agent.permissions
+        return await self._run_turn(
+            prompt=prompt,
+            agent=agent,
+            cwd=harness.cwd,
+            permissions=permissions,
+            goal=options.goal or agent.goal,
+            effort=options.effort or agent.effort,
+            output_schema=options.output_schema,
+            thread_id=None,
+        )
+
+    async def start(self, harness: Harness, options: SessionOptions) -> Session:
+        if not options.resume:
+            raise UnsupportedFeature(
+                "codex_cli sessions begin after run(); pass Run.session or resume an id."
+            )
+        return Session(
+            provider=self.provider,
+            surface=self.surface,
+            id=options.resume,
+            agent=harness.agent,
+            cwd=harness.cwd,
+            permissions=options.permissions or harness.permissions or harness.agent.permissions,
+            goal=options.goal or harness.agent.goal,
+        )
+
+    async def send(self, session: Session, turn: Turn) -> Run:
+        if session.agent is None or session.cwd is None:
+            raise YokeError("Codex CLI session needs agent and cwd to resume.")
+        return await self._run_turn(
+            prompt=turn.prompt,
+            agent=session.agent,
+            cwd=session.cwd,
+            permissions=session.permissions or session.agent.permissions,
+            goal=session.goal,
+            effort=session.agent.effort,
+            output_schema=None,
+            thread_id=session.id,
+        )
+
+    async def stream(self, session: Session, turn: Turn):
+        if session.agent is None or session.cwd is None:
+            raise YokeError("Codex CLI session needs agent and cwd to resume.")
+        async for event in self.cli.run(
+            prompt=codex_prompt(turn.prompt, session.goal),
+            cwd=session.cwd,
+            thread_id=session.id,
+            model=session.agent.model,
+            sandbox=sandbox_mode(session.permissions or session.agent.permissions),
+            approval=approval_policy(session.permissions or session.agent.permissions),
+            effort=str(session.agent.effort) if session.agent.effort else None,
+            network=(session.permissions or session.agent.permissions).network,
+            web_search="live" if session.agent.tools.web else "disabled",
+            skip_git_repo_check=self.skip_git_repo_check,
+            additional_directories=self.additional_directories,
+        ):
+            yield Event(kind=str(event.get("type", "unknown")), raw=event)
+
+    async def _run_turn(
+        self,
+        *,
+        prompt: str,
+        agent: Any,
+        cwd: Path,
+        permissions: Any,
+        goal: Goal | None,
+        effort: Any | None,
+        output_schema: dict[str, Any] | None,
+        thread_id: str | None,
+    ) -> Run:
         events: list[Event] = []
         output = ""
         usage: dict[str, Any] | None = None
         session: Session | None = None
-        agent = harness.agent
-        permissions = options.permissions or harness.permissions or agent.permissions
 
         async for event in self.cli.run(
-            prompt=codex_prompt(prompt, options.goal or agent.goal),
-            cwd=harness.cwd,
+            prompt=codex_prompt(prompt, goal),
+            cwd=cwd,
+            thread_id=thread_id,
             model=agent.model,
             sandbox=sandbox_mode(permissions),
             approval=approval_policy(permissions),
-            effort=str(options.effort or agent.effort)
-            if (options.effort or agent.effort)
-            else None,
+            effort=str(effort) if effort else None,
             network=permissions.network,
             web_search="live" if agent.tools.web else "disabled",
-            output_schema=options.output_schema,
+            output_schema=output_schema,
             skip_git_repo_check=self.skip_git_repo_check,
             additional_directories=self.additional_directories,
         ):
             events.append(Event(kind=str(event.get("type", "unknown")), raw=event))
             if event.get("type") == "thread.started":
-                session = Session(provider=self.provider, id=str(event["thread_id"]))
+                session = Session(
+                    provider=self.provider,
+                    surface=self.surface,
+                    id=str(event["thread_id"]),
+                    agent=agent,
+                    cwd=cwd,
+                    permissions=permissions,
+                    goal=goal,
+                )
             elif event.get("type") == "item.completed":
                 item = event.get("item", {})
                 if item.get("type") == "agent_message":
@@ -102,21 +179,14 @@ class Codex:
             usage=usage,
         )
 
-    async def start(self, harness: Harness, options: SessionOptions) -> Session:
-        raise UnsupportedFeature("Codex start() needs a live-thread handle slice.")
-
-    async def send(self, session: Session, turn: Turn) -> Run:
-        raise UnsupportedFeature("Codex Python bridge is the next provider slice.")
-
-    async def stream(self, session: Session, turn: Turn):
-        raise UnsupportedFeature("Codex Python bridge is the next provider slice.")
-        yield Event(kind="unreachable")
-
     async def set_goal(self, session: Session, goal: Goal) -> Session:
         raise UnsupportedFeature("Codex mutable goals require app-server protocol.")
 
     async def clear_goal(self, session: Session) -> Session:
         raise UnsupportedFeature("Codex mutable goals require app-server protocol.")
+
+    async def close(self, session: Session) -> None:
+        return None
 
 
 def codex_prompt(prompt: str, goal: Goal | None) -> str:
