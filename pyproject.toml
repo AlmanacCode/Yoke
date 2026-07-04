@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 authors = [{ name = "Almanac" }]
 dependencies = [
   "pydantic>=2.8",
+  "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

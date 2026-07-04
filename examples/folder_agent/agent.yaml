@@ -1,0 +1,6 @@
+description: Reviews code changes and finds concrete risks.
+model: inherit
+effort: high
+goal:
+  objective: Finish the review with specific findings or say no findings.
+  token_budget: 50000
