@@ -10,7 +10,7 @@ from collections.abc import AsyncIterator
 from typing import Protocol
 
 from yoke.capabilities import Capabilities
-from yoke.models import Event, Goal, Harness, Provider, Run, Session, Turn
+from yoke.models import Event, Goal, Harness, Provider, Run, Session, Surface, Turn
 from yoke.options import RunOptions, SessionOptions
 
 
@@ -18,6 +18,7 @@ class ProviderAdapter(Protocol):
     """Concrete provider boundary implemented by Claude and Codex adapters."""
 
     provider: Provider
+    surface: Surface | str
     capabilities: Capabilities
 
     async def run(self, harness: Harness, prompt: str, options: RunOptions) -> Run:

@@ -25,6 +25,7 @@ class Claude:
     """Adapter for Claude Agent SDK."""
 
     provider: Provider = "claude"
+    surface = "claude_python_sdk"
     capabilities = Capabilities.from_map(
         {
             Feature.ONE_SHOT: Support.NATIVE,

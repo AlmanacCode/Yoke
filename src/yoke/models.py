@@ -13,6 +13,13 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Provider = Literal["claude", "codex"]
+Surface = Literal[
+    "claude_python_sdk",
+    "claude_cli",
+    "codex_cli",
+    "codex_typescript_sdk",
+    "codex_app_server",
+]
 
 
 class YokeModel(BaseModel):
@@ -164,6 +171,7 @@ class Harness(YokeModel):
     """
 
     provider: Provider
+    surface: Surface | str | None = None
     agent: Agent
     cwd: Path
     permissions: Permissions | None = None
@@ -187,7 +195,7 @@ class Harness(YokeModel):
         from yoke.options import RunOptions
 
         run_options = options if isinstance(options, RunOptions) else RunOptions()
-        return await adapter_for(self.provider).run(self, prompt, run_options)
+        return await adapter_for(self.provider, self.surface).run(self, prompt, run_options)
 
     async def start(self, options: Any | None = None) -> Session:
         """Start or resume a provider session."""
@@ -198,7 +206,7 @@ class Harness(YokeModel):
         session_options = (
             options if isinstance(options, SessionOptions) else SessionOptions()
         )
-        return await adapter_for(self.provider).start(self, session_options)
+        return await adapter_for(self.provider, self.surface).start(self, session_options)
 
 
 class Session(YokeModel):
@@ -231,3 +239,4 @@ class Run(YokeModel):
     output: str | None = None
     events: tuple[Event, ...] = ()
     session: Session | None = None
+    usage: dict[str, Any] | None = None
