@@ -33,7 +33,7 @@ yoke = "yoke.cli:main"
 claude = ["claude-agent-sdk>=0.1"]
 codex = ["openai-codex"]
 all = ["claude-agent-sdk>=0.1", "openai-codex"]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6"]
 
 [project.urls]
 Documentation = "https://github.com/AlmanacCode/Yoke#readme"
