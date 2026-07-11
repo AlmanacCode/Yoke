@@ -15,6 +15,9 @@ sources:
   - id: ports
     type: file
     path: src/yoke/ports.py
+  - id: cli
+    type: file
+    path: src/yoke/cli.py
 ---
 
 Yoke Harness is the repo's provider-neutral way to run an agent on a real coding harness. A `Harness` binds an `Agent`, a provider such as Claude or Codex, a concrete provider surface, and a working directory; it then exposes one-shot runs, sessions, streaming, workflows, status, model selection, and capability planning through one Python object [@models]. The point is not to hide provider differences. Yoke keeps provider mechanics behind adapter ports while giving product code a stable language for the parts it owns [@ports].
@@ -42,6 +45,8 @@ The constructor accepts compact provider specs such as `codex:app`, then normali
 The harness asks the selected provider adapter to execute work. `ProviderAdapter` defines the boundary for readiness checks, login, runs, model listing, workflows, goal loops, session listing, session reads, session starts, sends, streams, goal mutation, interruption, compaction, renaming, tagging, forking, and close operations [@ports].
 
 Before many operations, the harness resolves required features. `run`, `stream`, `start`, `workflow`, `models`, and session-management methods all call capability planning helpers before delegating to an adapter [@models]. This is where the harness connects to [Provider Surfaces](provider-surfaces): the selected surface must support the features implied by the agent and options.
+
+The CLI is one concrete harness caller. It loads a folder collection, creates a harness for the selected provider surface, and stores run or workflow results after execution [@cli]; see [CLI And Run Storage](../reference/cli-and-run-storage) for that shell contract.
 
 ## Relationship to agents and sessions
 

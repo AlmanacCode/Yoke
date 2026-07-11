@@ -36,7 +36,7 @@ The distinction is simple: the session is the conversation handle, the turn is o
 
 ## Stored snapshots
 
-`RunStore` writes an inspectable snapshot under `.yoke/runs/<run_id>/` [@store]. A stored run has `record.json`, `result.json`, and optionally `events.jsonl`; workflow results use the same store and collect events from their step runs [@store].
+`RunStore` writes an inspectable snapshot under `.yoke/runs/<run_id>/` [@store]. A stored run has `record.json`, `result.json`, and optionally `events.jsonl`; workflow results use the same store and collect events from their step runs [@store]. [CLI And Run Storage](../reference/cli-and-run-storage) defines the shell commands that create and inspect those snapshots.
 
 A stored record keeps metadata such as kind, provider, surface, status, cwd, agent, collection, provider session id, paths, and event count [@store].
 

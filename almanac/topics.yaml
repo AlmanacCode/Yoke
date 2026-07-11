@@ -11,6 +11,14 @@ topics:
     title: Architecture
     description: System boundaries and flows that shape implementation work
     parents: []
+  - slug: reference
+    title: Reference
+    description: Exact lookup material for commands, formats, and stored contracts
+    parents: []
+  - slug: cli
+    title: CLI
+    description: Shell commands and local inspection flows
+    parents: [reference]
   - slug: authoring
     title: Authoring
     description: Filesystem-authored agents, skills, subagents, workflows, and collections

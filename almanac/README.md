@@ -21,6 +21,8 @@ pages into the runtime, authoring, and provider-surface boundaries.
   execution results or live conversation handles.
 - Read [Normalized Events](concepts/normalized-events) before changing event
   streaming, provider event mapping, or request events.
+- Read [CLI And Run Storage](reference/cli-and-run-storage) before changing
+  shell commands or `.yoke/runs/` snapshots.
 
 ## Maintenance standard
 

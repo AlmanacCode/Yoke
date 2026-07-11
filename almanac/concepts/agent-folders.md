@@ -15,6 +15,9 @@ sources:
   - id: folders
     type: file
     path: src/yoke/folders.py
+  - id: cli
+    type: file
+    path: src/yoke/cli.py
   - id: example-folder
     type: file
     path: examples/folder_agent/
@@ -32,7 +35,7 @@ The example folder follows this shape. It has an `agent.yaml`, root instructions
 
 `Agent.from_folder()` calls the loader, which reads `agent.yaml`, combines root `instructions.md` with Markdown files under `instructions/`, loads skills, recursively loads subagents, and loads workflows [@loader]. YAML fields such as `goal`, `tools`, `permissions`, `model`, `effort`, and `options` become the corresponding `Agent` fields [@loader].
 
-Collections add one level above a single agent. A collection folder uses `yoke.yaml` with an `agents` mapping and optional `default_provider`; `Collection.from_folder()` loads that mapping, and `collection.agent(name)` loads the named agent folder [@loader]. The README uses this to select an agent such as `codealmanac` from an `agents/` folder and pass it to a [Yoke Harness](yoke-harness) [@readme].
+Collections add one level above a single agent. A collection folder uses `yoke.yaml` with an `agents` mapping and optional `default_provider`; `Collection.from_folder()` loads that mapping, and `collection.agent(name)` loads the named agent folder [@loader]. The README uses this to select an agent such as `codealmanac` from an `agents/` folder and pass it to a [Yoke Harness](yoke-harness) [@readme]. The shell path uses the same collection boundary before creating a harness [@cli]; see [CLI And Run Storage](../reference/cli-and-run-storage) for the commands that load collection agents from folders.
 
 ## Saving folders
 
