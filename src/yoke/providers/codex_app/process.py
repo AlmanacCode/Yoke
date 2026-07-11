@@ -71,7 +71,7 @@ class JsonRpcLineProcess:
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise YokeError(f"Codex app-server {timeout_label}")
+                raise TimeoutError(f"Codex app-server {timeout_label}")
             if self.child.poll() is not None and self.messages.empty():
                 raise YokeError(self.exit_message())
             try:

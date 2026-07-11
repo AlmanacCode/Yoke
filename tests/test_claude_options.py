@@ -78,6 +78,7 @@ def test_claude_provider_options_reach_sdk_options(
     assert options.kwargs["include_partial_messages"] is True
     assert options.kwargs["include_hook_events"] is True
     assert options.kwargs["max_budget_usd"] == 1.5
+    assert options.kwargs["cwd"] == str(Path.cwd())
     assert options.kwargs["append_system_prompt"] == "extra"
     assert options.kwargs["model"] == "sonnet"
 

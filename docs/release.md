@@ -18,7 +18,7 @@ uv run --with twine twine check dist/*
 Verify the built wheel exposes the expected distribution and import package:
 
 ```bash
-uv run --with ./dist/almanac_yoke-0.1.2-py3-none-any.whl python - <<'PY'
+uv run --with ./dist/almanac_yoke-0.1.3-py3-none-any.whl python - <<'PY'
 import importlib.metadata as md
 from pathlib import Path
 

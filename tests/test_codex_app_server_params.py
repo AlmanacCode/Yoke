@@ -839,7 +839,7 @@ def test_codex_app_server_timeout_interrupts_and_fails(
 
     def timeout_read(*args):
         captured_timeout.append(args[3])
-        raise TimeoutError
+        raise TimeoutError("Codex app-server turn timed out")
 
     monkeypatch.setattr("yoke.providers.codex_app_server.read_turn", timeout_read)
 

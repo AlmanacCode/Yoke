@@ -463,7 +463,10 @@ class Claude:
             self.provider,
             live.client.receive_response(),
             session,
+            output_schema=options.output_schema,
             requested_model=session.model,
+            on_event=options.on_event,
+            timeout_seconds=options.timeout_seconds,
         )
         live.provider_session_id = (
             run.session.provider_session_id if run.session else live.provider_session_id
@@ -631,7 +634,7 @@ def claude_options(
     skill_filter = skills or ("all" if plugins else None)
     kwargs: dict[str, Any] = {
         "system_prompt": system_prompt(agent, goal),
-        "cwd": harness.cwd,
+        "cwd": str(harness.cwd),
         "model": options.model or agent.model,
         "effort": options.effort or agent.effort,
         "max_turns": options.max_turns,
