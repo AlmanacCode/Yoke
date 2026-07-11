@@ -1006,6 +1006,11 @@ class Harness(YokeModel):
     agent: Agent
     cwd: Path
     permissions: Permissions | None = None
+    environment: dict[str, str] = Field(
+        default_factory=dict,
+        exclude=True,
+        repr=False,
+    )
     credentials: Credentials = Field(
         default_factory=Credentials.auto,
         exclude=True,

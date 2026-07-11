@@ -684,6 +684,7 @@ def credential_env(
     env = dict(os.environ)
     if overrides is not None:
         env.update(overrides)
+    env.update(harness.environment)
     secret = harness.credentials.reveal()
     if harness.credentials.method is AuthMethod.API_KEY and secret is not None:
         env[ANTHROPIC_API_KEY] = secret

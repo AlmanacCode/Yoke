@@ -57,6 +57,20 @@ def test_codex_collaboration_mode_accepts_snake_or_camel_case() -> None:
     assert codex_collaboration_mode({"collaboration_mode": "plan"}) is None
 
 
+def test_codex_harness_environment_overrides_adapter_environment() -> None:
+    adapter = CodexAppServer(
+        env={"ADAPTER_ONLY": "yes", "SHARED": "adapter"}
+    )
+
+    assert adapter._environment(
+        {"ALMANAC_CLI": "/run/almanac", "SHARED": "harness"}
+    ) == {
+        "ADAPTER_ONLY": "yes",
+        "ALMANAC_CLI": "/run/almanac",
+        "SHARED": "harness",
+    }
+
+
 def test_codex_collaboration_mode_accepts_typed_options() -> None:
     collaboration = Collaboration(
         mode="plan",
@@ -675,7 +689,7 @@ async def run_codex_app_server_start_sets_provider_session_id() -> None:
     adapter = CodexAppServer()
     process = FakeProcess()
 
-    def fake_start_process(cwd):
+    def fake_start_process(cwd, environment=None):
         return process
 
     def fake_start_thread(started_process, harness, options, permissions, goal):
@@ -712,7 +726,7 @@ async def run_codex_app_server_session_model_survives_into_turn() -> None:
     process = FakeProcess()
     captured: dict[str, object] = {}
 
-    adapter._start_process = lambda cwd: process  # type: ignore[method-assign]
+    adapter._start_process = lambda cwd, environment=None: process  # type: ignore[method-assign]
 
     def fake_start_thread(started_process, harness, options, permissions, goal):
         captured["start_model"] = options.model
@@ -765,7 +779,7 @@ async def run_codex_app_server_run_override_survives_start_and_turn() -> None:
     adapter = CodexAppServer()
     process = FakeProcess()
     captured: list[str | None] = []
-    adapter._start_process = lambda cwd: process  # type: ignore[method-assign]
+    adapter._start_process = lambda cwd, environment=None: process  # type: ignore[method-assign]
 
     def fake_start_thread(started_process, harness, options, permissions, goal):
         captured.append(options.model)
@@ -869,7 +883,7 @@ def test_run_options_reject_nonpositive_timeout(value: float) -> None:
 async def test_codex_app_server_run_delivers_each_returned_event_once() -> None:
     adapter = CodexAppServer()
     process = FakeProcess()
-    adapter._start_process = lambda cwd: process  # type: ignore[method-assign]
+    adapter._start_process = lambda cwd, environment=None: process  # type: ignore[method-assign]
 
     def fake_start_thread(started_process, harness, options, permissions, goal):
         return AppServerThread(

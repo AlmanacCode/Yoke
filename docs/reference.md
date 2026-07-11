@@ -186,6 +186,26 @@ print(harness.profile().surface)  # codex_app_server
 If you set a surface explicitly, `require(...)` validates it instead of
 silently changing it.
 
+Embedders can bind environment variables to one harness without changing
+process-global `os.environ`:
+
+```python
+harness = Harness(
+    "codex:app",
+    agent=agent,
+    cwd=repo,
+    environment={"ALMANAC_CLI": "/opt/almanac/bin/almanac"},
+)
+```
+
+Yoke merges the controlled adapter environment first, then
+`Harness.environment`, then typed credentials. Harness values therefore win
+over adapter defaults, while an explicit API key or OAuth credential remains
+authoritative. Environment values are excluded from model serialization and
+repr because they may contain secrets. The built-in Claude SDK and Codex
+app-server surfaces pass the merged mapping to their child processes without
+mutating global state.
+
 `require(...)` chooses runnable Python-backed Yoke surfaces by default. Use
 `runnable=False` when you are planning against a conceptual provider surface
 that this package cannot run yet:

@@ -129,7 +129,7 @@ class CodexAppServer:
                 self.executable,
                 "login",
                 "status",
-                env=self.env,
+                env=self._environment(harness.environment),
             )
         except FileNotFoundError:
             return Readiness(
@@ -195,7 +195,11 @@ class CodexAppServer:
         )
 
     async def models(self, harness: Harness) -> tuple[Model, ...]:
-        process = await asyncio.to_thread(self._start_process, harness.cwd)
+        process = await asyncio.to_thread(
+            self._start_process,
+            harness.cwd,
+            harness.environment,
+        )
         try:
             return await asyncio.to_thread(self._list_models, process)
         finally:
@@ -249,7 +253,11 @@ class CodexAppServer:
         cwd: str | Path | None = None,
         include_worktrees: bool = True,
     ) -> SessionList:
-        process = await asyncio.to_thread(self._start_process, harness.cwd)
+        process = await asyncio.to_thread(
+            self._start_process,
+            harness.cwd,
+            harness.environment,
+        )
         try:
             return await asyncio.to_thread(
                 self._list_sessions,
@@ -270,7 +278,11 @@ class CodexAppServer:
         limit: int | None = None,
         offset: int = 0,
     ) -> SessionHistory:
-        process = await asyncio.to_thread(self._start_process, harness.cwd)
+        process = await asyncio.to_thread(
+            self._start_process,
+            harness.cwd,
+            harness.environment,
+        )
         try:
             return await asyncio.to_thread(
                 self._read_session,
@@ -308,7 +320,11 @@ class CodexAppServer:
         permissions = (
             options.permissions or harness.permissions or harness.agent.permissions
         )
-        process = await asyncio.to_thread(self._start_process, harness.cwd)
+        process = await asyncio.to_thread(
+            self._start_process,
+            harness.cwd,
+            harness.environment,
+        )
         goal = options.resolve_goal(harness.agent.goal)
         try:
             thread = await asyncio.to_thread(
@@ -508,12 +524,29 @@ class CodexAppServer:
                 f"Codex app-server session is not live: {session.id}"
             ) from exc
 
-    def _start_process(self, cwd: Path) -> JsonRpcLineProcess:
+    def _start_process(
+        self,
+        cwd: Path,
+        environment: dict[str, str] | None = None,
+    ) -> JsonRpcLineProcess:
         args = ["app-server"]
         for override in config_overrides(self.config):
             args.extend(["--config", override])
         args.extend(["--listen", "stdio://"])
-        return JsonRpcLineProcess.start(self.executable, tuple(args), cwd, self.env)
+        return JsonRpcLineProcess.start(
+            self.executable,
+            tuple(args),
+            cwd,
+            self._environment(environment),
+        )
+
+    def _environment(
+        self,
+        environment: dict[str, str] | None = None,
+    ) -> dict[str, str] | None:
+        merged = dict(self.env or {})
+        merged.update(environment or {})
+        return merged or None
 
     def _start_thread(
         self,

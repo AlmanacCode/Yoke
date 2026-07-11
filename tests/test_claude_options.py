@@ -83,6 +83,30 @@ def test_claude_provider_options_reach_sdk_options(
     assert options.kwargs["model"] == "sonnet"
 
 
+def test_harness_environment_overrides_adapter_environment_without_serializing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", fake_claude_agent_sdk())
+    harness = Harness(
+        provider="claude",
+        agent=Agent(instructions="test"),
+        cwd=Path.cwd(),
+        environment={"ALMANAC_CLI": "/run/almanac", "SHARED": "harness"},
+    )
+
+    options = claude_options(
+        harness,
+        RunOptions(),
+        env_overrides={"ADAPTER_ONLY": "yes", "SHARED": "adapter"},
+    )
+
+    assert options.kwargs["env"]["ADAPTER_ONLY"] == "yes"
+    assert options.kwargs["env"]["ALMANAC_CLI"] == "/run/almanac"
+    assert options.kwargs["env"]["SHARED"] == "harness"
+    assert "environment" not in harness.model_dump()
+    assert "/run/almanac" not in repr(harness)
+
+
 def test_claude_prompt_uses_async_iterable_when_permissions_callback_present() -> None:
     async def can_use_tool(*_args, **_kwargs):
         return {"behavior": "allow"}
