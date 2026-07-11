@@ -174,6 +174,31 @@ async def test_existing_claude_oauth_is_discovered_without_a_turn(
 
 
 @pytest.mark.asyncio
+async def test_logged_out_claude_json_has_readable_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", ModuleType("claude_agent_sdk"))
+
+    async def fake_run_command(*args, env=None):
+        return CommandCheck(
+            code=1,
+            stdout='{"loggedIn":false,"authMethod":"none"}',
+            stderr="",
+        )
+
+    monkeypatch.setattr(claude_provider, "run_command", fake_run_command)
+    value = harness("claude", "claude_python_sdk", Credentials.auto()).with_adapter(
+        Claude()
+    )
+
+    readiness = await value.check()
+
+    assert readiness.available is False
+    assert readiness.message == "Claude not logged in"
+    assert readiness.fix == "Run `claude auth login` or provide Claude credentials."
+
+
+@pytest.mark.asyncio
 async def test_codex_sdk_rejects_runtime_key_without_persisting_login(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

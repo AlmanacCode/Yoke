@@ -25,6 +25,12 @@ class UserMessage:
 
 
 @dataclass
+class SystemMessage:
+    subtype: str
+    data: dict[str, Any]
+
+
+@dataclass
 class ResultMessage:
     result: str | None = None
     structured_output: Any | None = None
@@ -182,6 +188,20 @@ def test_claude_stream_text_delta_maps_to_text_delta_event() -> None:
     assert event.provider_session_id == "session-1"
     assert event.provider_event_id == "stream-1"
     assert event.provider_parent_tool_use_id == "toolu-parent"
+
+
+def test_claude_only_init_system_message_creates_provider_session() -> None:
+    initialized = claude_events(
+        SystemMessage(subtype="init", data={"session_id": "session-1"})
+    )[0]
+    status = claude_events(
+        SystemMessage(subtype="status", data={"session_id": "session-1"})
+    )[0]
+
+    assert initialized.kind is EventKind.PROVIDER_SESSION
+    assert initialized.provider_session_id == "session-1"
+    assert status.kind is EventKind.STREAM_EVENT
+    assert status.provider_session_id == "session-1"
 
 
 def test_claude_non_text_delta_remains_generic_stream_event() -> None:

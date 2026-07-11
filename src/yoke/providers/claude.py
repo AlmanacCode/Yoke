@@ -149,7 +149,12 @@ class Claude:
                 provider=self.provider,
                 surface=self.surface,
                 available=False,
-                message=result.message or f"claude auth status exited {result.code}",
+                message=(
+                    claude_auth_status_message(result.stdout)
+                    or result.message
+                    or f"claude auth status exited {result.code}"
+                ),
+                fix="Run `claude auth login` or provide Claude credentials.",
                 raw=result.stderr or result.stdout,
             )
         return Readiness(
@@ -1201,10 +1206,15 @@ def claude_events(
     if name == "SystemMessage":
         data = getattr(message, "data", {}) or {}
         session_id = data.get("session_id") if isinstance(data, dict) else None
+        subtype = str(getattr(message, "subtype", "system"))
         return [
             Event(
-                kind="provider_session",
-                message=str(getattr(message, "subtype", "system")),
+                kind=(
+                    EventKind.PROVIDER_SESSION
+                    if subtype == "init"
+                    else EventKind.STREAM_EVENT
+                ),
+                message=subtype,
                 provider_session_id=str(session_id) if session_id else None,
                 raw=message,
             )
