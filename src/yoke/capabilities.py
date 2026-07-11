@@ -24,6 +24,7 @@ class Feature(StrEnum):
     SESSION_RENAME = "session_rename"
     SESSION_TAG = "session_tag"
     STREAMING = "streaming"
+    RUN_EVENT_CALLBACKS = "run_event_callbacks"
     STRUCTURED_OUTPUT = "structured_output"
     MODELS = "models"
     LOGIN = "login"

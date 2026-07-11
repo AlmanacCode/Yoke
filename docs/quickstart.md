@@ -22,10 +22,8 @@ print(result.output)
 
 ## Install locally
 
-Yoke is currently a private source package. The distribution name is
-`almanac-yoke`, while the import package is `yoke`.
-
-Once published to a package index:
+The public distribution name is `almanac-yoke`, while the import package is
+`yoke`:
 
 ```bash
 pip install almanac-yoke

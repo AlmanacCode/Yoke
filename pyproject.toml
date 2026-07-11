@@ -1,6 +1,6 @@
 [project]
 name = "almanac-yoke"
-version = "0.1.0"
+version = "0.1.1"
 description = "A provider-neutral harness SDK for agent systems on Claude and Codex."
 readme = "README.md"
 requires-python = ">=3.11"

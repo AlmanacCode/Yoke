@@ -1,7 +1,7 @@
 # Yoke release checklist
 
-Yoke is developed as a private source package first. Public installation uses
-the distribution name `almanac-yoke`; Python code imports `yoke`.
+Yoke is public on PyPI under the distribution name `almanac-yoke`; Python code
+imports `yoke`.
 
 ## Pre-release checks
 
@@ -18,7 +18,7 @@ uv run --with twine twine check dist/*
 Verify the built wheel exposes the expected distribution and import package:
 
 ```bash
-uv run --with ./dist/almanac_yoke-0.1.0-py3-none-any.whl python - <<'PY'
+uv run --with ./dist/almanac_yoke-0.1.1-py3-none-any.whl python - <<'PY'
 import importlib.metadata as md
 from pathlib import Path
 
@@ -66,7 +66,7 @@ PY
 ```
 
 ```bash
-uv run pytest tests/test_yoke_harness_adapter.py tests/test_claude_adapter.py tests/test_codex_adapter.py
+uv run pytest tests/test_yoke_harness_integration.py
 ```
 
 ## Release metadata

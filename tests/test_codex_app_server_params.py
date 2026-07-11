@@ -15,12 +15,14 @@ from yoke import (
     CodexSandbox,
     Collaboration,
     CollaborationSettings,
+    Event,
     ForkOptions,
     Harness,
     Permissions,
     ProviderOptions,
     RequestPolicy,
     RunOptions,
+    RunStatus,
     Session,
     SessionOptions,
     ToolKind,
@@ -212,6 +214,13 @@ def test_runtime_options_report_sdk_only_request_handler() -> None:
 
 def test_runtime_options_ignores_unset_runtime_only_fields() -> None:
     assert CodexAppServerOptions().runtime_options() == ()
+
+
+def test_run_event_callback_is_runtime_only() -> None:
+    options = RunOptions(on_event=lambda event: None)
+
+    assert [item.path for item in options.runtime_options()] == ["on_event"]
+    assert "on_event" not in options.model_dump()
 
 
 def test_runtime_options_reports_callable_values_in_raw_escape_hatches() -> None:
@@ -716,7 +725,16 @@ async def run_codex_app_server_session_model_survives_into_turn() -> None:
             provider_options={},
         )
 
-    def fake_run_turn(thread, session, turn, schema, provider_options, model):
+    def fake_run_turn(
+        thread,
+        session,
+        turn,
+        schema,
+        provider_options,
+        model,
+        on_event=None,
+        timeout_seconds=None,
+    ):
         captured["turn_model"] = model or session.model
         return TurnResult(output="ok")
 
@@ -760,7 +778,16 @@ async def run_codex_app_server_run_override_survives_start_and_turn() -> None:
             provider_options={},
         )
 
-    def fake_run_turn(thread, session, turn, schema, provider_options, model):
+    def fake_run_turn(
+        thread,
+        session,
+        turn,
+        schema,
+        provider_options,
+        model,
+        on_event=None,
+        timeout_seconds=None,
+    ):
         captured.append(model or session.model)
         return TurnResult(output="ok")
 
@@ -777,6 +804,113 @@ async def run_codex_app_server_run_override_survives_start_and_turn() -> None:
 
     assert captured == ["run-model", "run-model"]
     assert result.requested_model == "run-model"
+
+
+@pytest.mark.parametrize(
+    ("timeout_seconds", "expected_timeout"),
+    [(0.01, 0.01), (None, 99)],
+)
+def test_codex_app_server_timeout_interrupts_and_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    timeout_seconds: float | None,
+    expected_timeout: float,
+) -> None:
+    adapter = CodexAppServer(turn_timeout_seconds=99)
+    interrupted: list[str] = []
+    captured_timeout: list[float] = []
+    thread = AppServerThread(
+        process=FakeProcess(),
+        thread_id="thread-1",
+        cwd=Path("/tmp/yoke"),
+        permissions=Permissions(),
+        effort=None,
+        provider_options={},
+    )
+    def start_turn(*args, **kwargs):
+        thread.active_turn_id = "turn-1"
+        return "turn-1"
+
+    monkeypatch.setattr(adapter, "_start_turn", start_turn)
+    monkeypatch.setattr(
+        adapter,
+        "_interrupt",
+        lambda value: interrupted.append(value.active_turn_id or ""),
+    )
+
+    def timeout_read(*args):
+        captured_timeout.append(args[3])
+        raise TimeoutError
+
+    monkeypatch.setattr("yoke.providers.codex_app_server.read_turn", timeout_read)
+
+    result = adapter._run_turn(
+        thread,
+        Session(provider="codex", id="thread-1"),
+        Turn(prompt="test"),
+        None,
+        None,
+        timeout_seconds=timeout_seconds,
+    )
+
+    assert captured_timeout == [expected_timeout]
+    assert interrupted == ["turn-1"]
+    assert result.status is RunStatus.FAILED
+    assert result.failure is not None
+    assert result.failure.code == "timeout"
+
+
+@pytest.mark.parametrize("value", [0, -1])
+def test_run_options_reject_nonpositive_timeout(value: float) -> None:
+    with pytest.raises(ValueError, match="greater than zero"):
+        RunOptions(timeout_seconds=value)
+
+
+@pytest.mark.asyncio
+async def test_codex_app_server_run_delivers_each_returned_event_once() -> None:
+    adapter = CodexAppServer()
+    process = FakeProcess()
+    adapter._start_process = lambda cwd: process  # type: ignore[method-assign]
+
+    def fake_start_thread(started_process, harness, options, permissions, goal):
+        return AppServerThread(
+            process=started_process,
+            thread_id="thread-1",
+            cwd=harness.cwd,
+            permissions=permissions,
+            effort=None,
+            provider_options={},
+        )
+
+    def fake_run_turn(
+        thread,
+        session,
+        turn,
+        schema,
+        provider_options,
+        model,
+        on_event=None,
+        timeout_seconds=None,
+    ):
+        event = Event(kind="text", message="ok", surface="codex_app_server")
+        if on_event is not None:
+            on_event(event)
+            assert [item.kind for item in observed] == ["provider_session", "text"]
+        return TurnResult(output="ok", events=[event])
+
+    adapter._start_thread = fake_start_thread  # type: ignore[method-assign]
+    adapter._run_turn = fake_run_turn  # type: ignore[method-assign]
+    harness = Harness(
+        provider="codex",
+        surface="codex_app_server",
+        agent=Agent(instructions="root"),
+        cwd=Path("/tmp/yoke"),
+    )
+    observed = []
+
+    result = await adapter.run(harness, "test", RunOptions(on_event=observed.append))
+
+    assert tuple(observed) == result.events
+    assert [event.kind for event in observed] == ["provider_session", "text"]
 
 
 def test_codex_app_server_fork_sets_provider_session_id() -> None:

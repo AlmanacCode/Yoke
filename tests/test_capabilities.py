@@ -202,6 +202,52 @@ def test_harness_plan_uses_option_features_without_running() -> None:
     assert plan.ok
 
 
+def test_run_event_callback_selects_or_rejects_the_surface() -> None:
+    callback = RunOptions(on_event=lambda event: None)
+    automatic = Harness(
+        provider="codex",
+        agent=Agent(instructions="test"),
+        cwd=Path.cwd(),
+    )
+
+    plan = automatic.plan(callback)
+
+    assert plan.ok
+    assert plan.features == (Feature.RUN_EVENT_CALLBACKS,)
+    assert plan.profile.surface == "codex_app_server"
+
+    for surface in ("codex_cli", "codex_python_sdk"):
+        unsupported = automatic.model_copy(update={"surface": surface})
+        with pytest.raises(UnsupportedFeature, match="run_event_callbacks"):
+            unsupported.plan(callback).raise_for_status()
+
+
+def test_claude_run_event_callback_uses_python_sdk() -> None:
+    harness = Harness(
+        provider="claude",
+        agent=Agent(instructions="test"),
+        cwd=Path.cwd(),
+    )
+
+    plan = harness.plan(RunOptions(on_event=lambda event: None))
+
+    assert plan.ok
+    assert plan.profile.surface == "claude_python_sdk"
+
+
+@pytest.mark.asyncio
+async def test_run_event_callback_fails_before_unsupported_codex_run() -> None:
+    harness = Harness(
+        provider="codex",
+        surface="codex_cli",
+        agent=Agent(instructions="test"),
+        cwd=Path.cwd(),
+    )
+
+    with pytest.raises(UnsupportedFeature, match="run_event_callbacks"):
+        await harness.run("do not start", RunOptions(on_event=lambda event: None))
+
+
 def test_agent_features_declare_goal_skills_subagents_and_workflows() -> None:
     agent = Agent(
         instructions="Coordinate.",
@@ -285,7 +331,7 @@ def test_plan_reports_explain_selected_surface_lowering() -> None:
     assert rows["skills"].support == "native"
     assert "skill roots" in (rows["skills"].lowering or "")
     assert rows["declared_subagents"].support == "compiled"
-    assert "developer instructions" in (rows["declared_subagents"].lowering or "")
+    assert "spawn_agent" in (rows["declared_subagents"].lowering or "")
     assert rows["workflow"].support == "emulated"
     assert "app-server turns" in (rows["workflow"].lowering or "")
     assert "await harness.workflow(workflow, prompt)" in rows["workflow"].recipes
@@ -1204,6 +1250,9 @@ def test_run_options_declare_implied_features() -> None:
     assert options.features() == (Feature.STRUCTURED_OUTPUT,)
     assert isinstance(options.features()[0], Feature)
     assert RunOptions().features() == ()
+    assert RunOptions(on_event=lambda event: None).features() == (
+        Feature.RUN_EVENT_CALLBACKS,
+    )
     assert RunOptions(channel=Channel.APP_SERVER).features() == ()
     assert RunOptions(goal=Goal("finish safely")).features() == (Feature.GOAL,)
     assert RunOptions(inherit_goal=False).features(Goal("finish safely")) == ()

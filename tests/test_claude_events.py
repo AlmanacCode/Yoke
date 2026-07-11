@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from yoke import EventKind, ToolKind, ToolStatus
-from yoke.providers.claude import claude_events
+from yoke.providers.claude import ClaudeEventState, claude_events
 
 
 @dataclass
@@ -14,6 +14,14 @@ class AssistantMessage:
     session_id: str = "session-1"
     parent_tool_use_id: str | None = None
     usage: dict[str, Any] | None = None
+
+
+@dataclass
+class UserMessage:
+    content: list[Any]
+    uuid: str = "user-1"
+    session_id: str = "session-1"
+    parent_tool_use_id: str | None = None
 
 
 @dataclass
@@ -120,6 +128,14 @@ class HookEventMessage:
     uuid: str = "hook-1"
 
 
+@dataclass
+class StreamEvent:
+    event: dict[str, Any]
+    uuid: str = "stream-1"
+    session_id: str = "session-1"
+    parent_tool_use_id: str | None = "toolu-parent"
+
+
 def test_claude_tool_use_block_maps_to_tool_event() -> None:
     message = AssistantMessage(
         content=[
@@ -147,6 +163,38 @@ def test_claude_tool_use_block_maps_to_tool_event() -> None:
     assert event.tool.command == "pytest"
     assert event.tool.cwd == "/repo"
     assert event.tool.status is ToolStatus.STARTED
+
+
+def test_claude_stream_text_delta_maps_to_text_delta_event() -> None:
+    message = StreamEvent(
+        event={
+            "type": "content_block_delta",
+            "delta": {"type": "text_delta", "text": "hello"},
+        }
+    )
+
+    events = claude_events(message)
+
+    assert len(events) == 1
+    event = events[0]
+    assert event.kind is EventKind.TEXT_DELTA
+    assert event.message == "hello"
+    assert event.provider_session_id == "session-1"
+    assert event.provider_event_id == "stream-1"
+    assert event.provider_parent_tool_use_id == "toolu-parent"
+
+
+def test_claude_non_text_delta_remains_generic_stream_event() -> None:
+    message = StreamEvent(
+        event={
+            "type": "content_block_delta",
+            "delta": {"type": "thinking_delta", "text": "not assistant text"},
+        }
+    )
+
+    event = claude_events(message)[0]
+
+    assert event.kind is EventKind.STREAM_EVENT
 
 
 def test_claude_tool_result_block_maps_to_tool_result_event() -> None:
@@ -376,6 +424,99 @@ def test_claude_tool_kind_maps_file_and_agent_tools() -> None:
     assert all(event.provider_parent_tool_use_id == "parent-tool" for event in events)
 
 
+def test_claude_agent_tool_use_and_result_share_lifecycle_metadata() -> None:
+    state = ClaudeEventState()
+    started = claude_events(
+        AssistantMessage(
+            content=[
+                ToolUseBlock(
+                    id="agent-1",
+                    name="Agent",
+                    input={
+                        "prompt": "Review the diff",
+                        "subagent_type": "reviewer",
+                        "model": "claude-opus-4-1",
+                        "reasoning_effort": "high",
+                    },
+                )
+            ]
+        ),
+        state,
+    )[0]
+    completed = claude_events(
+        UserMessage(
+            content=[ToolResultBlock(tool_use_id="agent-1", content="Looks good")]
+        ),
+        state,
+    )[0]
+
+    assert started.agent is not None
+    assert started.agent.action == "started"
+    assert started.agent.agent_id == "agent-1"
+    assert started.agent.agent_type == "reviewer"
+    assert started.agent.prompt == "Review the diff"
+    assert started.agent.model == "claude-opus-4-1"
+    assert started.agent.reasoning_effort == "high"
+    assert completed.kind is EventKind.TOOL_RESULT
+    assert completed.agent is not None
+    assert completed.agent.action == "completed"
+    assert completed.agent.agent_id == "agent-1"
+    assert completed.agent.states == {"status": "completed"}
+
+
+def test_claude_non_agent_tool_result_does_not_gain_agent_metadata() -> None:
+    state = ClaudeEventState()
+    claude_events(
+        AssistantMessage(
+            content=[ToolUseBlock(id="read-1", name="Read", input={"path": "x"})]
+        ),
+        state,
+    )
+
+    result = claude_events(
+        UserMessage(
+            content=[ToolResultBlock(tool_use_id="read-1", content="contents")]
+        ),
+        state,
+    )[0]
+
+    assert result.agent is None
+
+
+def test_claude_failed_agent_tool_result_marks_failed_lifecycle() -> None:
+    state = ClaudeEventState()
+    claude_events(
+        AssistantMessage(
+            content=[
+                ToolUseBlock(
+                    id="agent-1",
+                    name="Task",
+                    input={"prompt": "Review the diff"},
+                )
+            ]
+        ),
+        state,
+    )
+
+    failed = claude_events(
+        UserMessage(
+            content=[
+                ToolResultBlock(
+                    tool_use_id="agent-1",
+                    content="Subagent failed",
+                    is_error=True,
+                )
+            ]
+        ),
+        state,
+    )[0]
+
+    assert failed.agent is not None
+    assert failed.agent.action == "failed"
+    assert failed.agent.agent_id == "agent-1"
+    assert failed.agent.states == {"status": "failed"}
+
+
 def test_claude_task_started_maps_agent_background_event() -> None:
     message = TaskStartedMessage(
         task_id="task-1",
@@ -397,7 +538,40 @@ def test_claude_task_started_maps_agent_background_event() -> None:
     assert event.tool.status is ToolStatus.STARTED
     assert event.agent is not None
     assert event.agent.action == "started"
+    assert event.agent.agent_id == "task-1"
+    assert event.agent.agent_type == "local_agent"
     assert event.agent.prompt == "Review the diff"
+
+
+def test_claude_agent_task_result_preserves_correlated_completion() -> None:
+    state = ClaudeEventState()
+    claude_events(
+        TaskStartedMessage(
+            task_id="task-1",
+            description="Review the diff",
+            task_type="local_agent",
+        ),
+        state,
+    )
+
+    completed = claude_events(
+        TaskNotificationMessage(
+            task_id="task-1",
+            status="completed",
+            output_file="/tmp/task.md",
+            summary="Found one issue",
+        ),
+        state,
+    )[0]
+
+    assert completed.agent is not None
+    assert completed.agent.action == "completed"
+    assert completed.agent.agent_id == "task-1"
+    assert completed.agent.agent_type == "local_agent"
+    assert completed.agent.states == {
+        "status": "completed",
+        "output_file": "/tmp/task.md",
+    }
 
 
 def test_claude_task_progress_maps_usage_and_last_tool() -> None:

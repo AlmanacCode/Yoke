@@ -6,8 +6,8 @@ import asyncio
 import inspect
 import json
 import os
-from collections.abc import AsyncIterator
-from dataclasses import dataclass
+from collections.abc import AsyncIterator, Callable
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
@@ -73,6 +73,18 @@ from yoke.workflows import native_workflow_unsupported
 ANTHROPIC_API_KEY = "ANTHROPIC_API_KEY"
 CLAUDE_CODE_OAUTH_TOKEN = "CLAUDE_CODE_OAUTH_TOKEN"
 CLAUDE_INSTALL = "pip install almanac-yoke[claude]"
+
+
+@dataclass
+class ClaudeEventState:
+    """Correlation state for provider events that split tool use from result."""
+
+    agent_tools: dict[str, AgentCall] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ClaudeRunTimeout:
+    seconds: float
 
 
 class Claude:
@@ -201,6 +213,8 @@ class Claude:
             surface=self.surface,
             output_schema=options.output_schema,
             requested_model=options.model or harness.agent.model,
+            on_event=options.on_event,
+            timeout_seconds=options.timeout_seconds,
         )
 
     async def models(self, harness: Harness):
@@ -465,8 +479,9 @@ class Claude:
             session_id=session.id,
         )
         text: list[str] = []
+        event_state = ClaudeEventState()
         async for message in live.client.receive_response():
-            events = claude_events(message)
+            events = claude_events(message, event_state)
             if type(message).__name__ == "ResultMessage":
                 events = deduplicate_result_text(events, text)
             for event in events:
@@ -1011,6 +1026,8 @@ async def collect_messages(
     surface: str | None = None,
     output_schema: OutputSchema | None = None,
     requested_model: str | None = None,
+    on_event: Callable[[Event], None] | None = None,
+    timeout_seconds: float | None = None,
 ) -> Run:
     events: list[Event] = []
     text: list[str] = []
@@ -1018,9 +1035,16 @@ async def collect_messages(
     data: Any | None = None
     usage: Usage | None = None
     failure: Failure | None = None
+    event_state = ClaudeEventState()
     resolved_surface = surface or (str(session.surface) if session else None)
-    async for message in messages:
-        mapped = claude_events(message)
+    async for message in claude_messages_with_timeout(messages, timeout_seconds):
+        if isinstance(message, ClaudeRunTimeout):
+            failure = Failure(
+                message=f"Claude run timed out after {message.seconds:g} seconds",
+                code="timeout",
+            )
+            break
+        mapped = claude_events(message, event_state)
         if type(message).__name__ == "ResultMessage":
             mapped = deduplicate_result_text(mapped, text)
         if resolved_surface is not None:
@@ -1028,6 +1052,9 @@ async def collect_messages(
                 event.model_copy(update={"surface": resolved_surface})
                 for event in mapped
             ]
+        if on_event is not None:
+            for event in mapped:
+                on_event(event)
         events.extend(mapped)
         for event in mapped:
             if event.kind == "text" and event.message is not None:
@@ -1072,6 +1099,21 @@ async def collect_messages(
         status=RunStatus.FAILED if failure is not None else RunStatus.SUCCEEDED,
         failure=failure,
     )
+
+
+async def claude_messages_with_timeout(
+    messages: AsyncIterator[Any],
+    timeout_seconds: float | None,
+) -> AsyncIterator[Any | ClaudeRunTimeout]:
+    """Bound a one-shot response while retaining messages received before timeout."""
+
+    try:
+        async with asyncio.timeout(timeout_seconds):
+            async for message in messages:
+                yield message
+    except TimeoutError:
+        if timeout_seconds is not None:
+            yield ClaudeRunTimeout(timeout_seconds)
 
 
 def deduplicate_result_text(events: list[Event], prior_text: list[str]) -> list[Event]:
@@ -1142,12 +1184,18 @@ def session_with_provider_id(
     return session.model_copy(update={"provider_session_id": provider_session_id})
 
 
-def claude_events(message: Any) -> list[Event]:
+def claude_events(
+    message: Any,
+    state: ClaudeEventState | None = None,
+) -> list[Event]:
     """Map Claude SDK messages into small Yoke events."""
 
+    state = state or ClaudeEventState()
     name = type(message).__name__
     if name == "AssistantMessage":
-        return assistant_events(message)
+        return assistant_events(message, state)
+    if name == "UserMessage":
+        return user_events(message, state)
     if name == "ResultMessage":
         return result_events(message)
     if name == "SystemMessage":
@@ -1165,7 +1213,7 @@ def claude_events(message: Any) -> list[Event]:
         event = getattr(message, "event", {}) or {}
         return [
             Event(
-                kind="stream_event",
+                kind=stream_event_kind(event),
                 message=stream_event_text(event),
                 provider_session_id=getattr(message, "session_id", None),
                 provider_event_id=getattr(message, "uuid", None),
@@ -1190,17 +1238,17 @@ def claude_events(message: Any) -> list[Event]:
             )
         ]
     if name == "TaskStartedMessage":
-        return [task_started_event(message)]
+        return [task_started_event(message, state)]
     if name == "TaskProgressMessage":
         return [task_progress_event(message)]
     if name == "TaskNotificationMessage":
-        return [task_notification_event(message)]
+        return [task_notification_event(message, state)]
     if name == "TaskUpdatedMessage":
         return [task_updated_event(message)]
     return [Event(kind=name, raw=message)]
 
 
-def assistant_events(message: Any) -> list[Event]:
+def assistant_events(message: Any, state: ClaudeEventState) -> list[Event]:
     events: list[Event] = []
     for block in getattr(message, "content", []):
         block_name = type(block).__name__
@@ -1221,15 +1269,15 @@ def assistant_events(message: Any) -> list[Event]:
                 )
             )
         elif block_name == "ToolUseBlock":
-            events.append(tool_use_event(message, block))
+            events.append(tool_use_event(message, block, state))
         elif block_name == "ToolResultBlock":
-            events.append(tool_result_event(message, block))
+            events.append(tool_result_event(message, block, state))
         elif block_name == "ThinkingBlock":
             events.append(thinking_event(message, block))
         elif block_name == "ServerToolUseBlock":
-            events.append(tool_use_event(message, block))
+            events.append(tool_use_event(message, block, state))
         elif block_name == "ServerToolResultBlock":
-            events.append(tool_result_event(message, block))
+            events.append(tool_result_event(message, block, state))
     usage = claude_usage(getattr(message, "usage", None))
     if usage is not None:
         events.append(
@@ -1248,13 +1296,32 @@ def assistant_events(message: Any) -> list[Event]:
     return events or [Event(kind="stream_event", raw=message)]
 
 
-def tool_use_event(message: Any, block: Any) -> Event:
+def user_events(message: Any, state: ClaudeEventState) -> list[Event]:
+    """Map SDK user messages, including native tool-result blocks."""
+
+    events = [
+        tool_result_event(message, block, state)
+        for block in getattr(message, "content", [])
+        if type(block).__name__ in {"ToolResultBlock", "ServerToolResultBlock"}
+    ]
+    return events or [Event(kind="stream_event", raw=message)]
+
+
+def tool_use_event(
+    message: Any,
+    block: Any,
+    state: ClaudeEventState,
+) -> Event:
     name = getattr(block, "name", None)
     tool_input = getattr(block, "input", None)
+    tool_id = getattr(block, "id", None)
+    agent = agent_tool_call(name, tool_id, tool_input)
+    if agent is not None and isinstance(tool_id, str):
+        state.agent_tools[tool_id] = agent
     return Event(
         kind="tool_use",
         message=tool_title(name, tool_input),
-        tool_id=getattr(block, "id", None),
+        tool_id=tool_id,
         tool_name=name,
         tool_input=(
             json.dumps(tool_input, sort_keys=True)
@@ -1262,6 +1329,7 @@ def tool_use_event(message: Any, block: Any) -> Event:
             else None
         ),
         tool=claude_tool(name, tool_input, ToolStatus.STARTED),
+        agent=agent,
         provider_session_id=getattr(message, "session_id", None),
         provider_event_id=first_text(
             getattr(message, "uuid", None),
@@ -1296,17 +1364,25 @@ def thinking_event(message: Any, block: Any) -> Event:
     )
 
 
-def tool_result_event(message: Any, block: Any) -> Event:
+def tool_result_event(
+    message: Any,
+    block: Any,
+    state: ClaudeEventState,
+) -> Event:
     content = getattr(block, "content", None)
     is_error = getattr(block, "is_error", None)
     status = ToolStatus.FAILED if is_error else ToolStatus.COMPLETED
+    tool_id = getattr(block, "tool_use_id", None)
+    started = state.agent_tools.pop(tool_id, None)
+    agent = agent_result_call(started, tool_id, status)
     return Event(
         kind="tool_result",
         message=tool_result_message(content, is_error),
-        tool_id=getattr(block, "tool_use_id", None),
+        tool_id=tool_id,
         tool=Tool(status=status),
         tool_result=content,
         tool_is_error=is_error,
+        agent=agent,
         provider_session_id=getattr(message, "session_id", None),
         provider_event_id=first_text(
             getattr(message, "uuid", None),
@@ -1372,6 +1448,48 @@ def claude_tool_kind(name: str | None) -> ToolKind:
     }.get(name, ToolKind.UNKNOWN)
 
 
+def agent_tool_call(
+    name: str | None,
+    tool_id: object,
+    tool_input: Any,
+) -> AgentCall | None:
+    """Describe a provider Agent/Task tool without classifying other tools."""
+
+    if claude_tool_kind(name) != ToolKind.AGENT:
+        return None
+    values = tool_input if isinstance(tool_input, dict) else {}
+    return AgentCall(
+        action="started",
+        agent_id=tool_id if isinstance(tool_id, str) else None,
+        agent_type=first_text(
+            values.get("subagent_type"),
+            values.get("agent_type"),
+            name,
+        ),
+        prompt=values.get("prompt") if isinstance(values.get("prompt"), str) else None,
+        model=values.get("model") if isinstance(values.get("model"), str) else None,
+        reasoning_effort=values.get("reasoning_effort")
+        if isinstance(values.get("reasoning_effort"), str)
+        else None,
+    )
+
+
+def agent_result_call(
+    started: AgentCall | None,
+    tool_id: object,
+    status: ToolStatus,
+) -> AgentCall | None:
+    if started is None:
+        return None
+    return started.model_copy(
+        update={
+            "action": "failed" if status == ToolStatus.FAILED else "completed",
+            "agent_id": tool_id if isinstance(tool_id, str) else started.agent_id,
+            "states": {"status": status.value},
+        }
+    )
+
+
 def tool_title(name: str | None, tool_input: Any) -> str:
     if not name:
         return "tool use"
@@ -1396,20 +1514,24 @@ def tool_result_message(content: Any, is_error: bool | None) -> str:
     return "tool failed" if is_error else "tool completed"
 
 
-def task_started_event(message: Any) -> Event:
+def task_started_event(message: Any, state: ClaudeEventState) -> Event:
     task_type = getattr(message, "task_type", None)
     description = getattr(message, "description", None)
+    tool_id = getattr(message, "task_id", None)
+    agent = task_agent_call(task_type, "started", description, tool_id)
+    if agent is not None and isinstance(tool_id, str):
+        state.agent_tools[tool_id] = agent
     return Event(
         kind="tool_use",
         message=description or "background task started",
-        tool_id=getattr(message, "task_id", None),
+        tool_id=tool_id,
         tool_name=task_type,
         tool=Tool(
             kind=task_tool_kind(task_type),
             title=description,
             status=ToolStatus.STARTED,
         ),
-        agent=task_agent_call(task_type, "started", description),
+        agent=agent,
         provider_session_id=getattr(message, "session_id", None),
         provider_event_id=getattr(message, "uuid", None),
         provider_parent_tool_use_id=getattr(message, "tool_use_id", None),
@@ -1598,7 +1720,7 @@ def task_progress_event(message: Any) -> Event:
     )
 
 
-def task_notification_event(message: Any) -> Event:
+def task_notification_event(message: Any, state: ClaudeEventState) -> Event:
     usage, duration_ms = task_usage(getattr(message, "usage", None))
     status = task_tool_status(getattr(message, "status", None))
     summary = getattr(message, "summary", None)
@@ -1608,10 +1730,22 @@ def task_notification_event(message: Any) -> Event:
         "output_file": output_file,
         "summary": summary,
     }
+    tool_id = getattr(message, "task_id", None)
+    started = state.agent_tools.pop(tool_id, None)
+    agent = agent_result_call(started, tool_id, status)
+    if agent is not None:
+        agent = agent.model_copy(
+            update={
+                "states": {
+                    "status": getattr(message, "status", None),
+                    "output_file": output_file,
+                }
+            }
+        )
     return Event(
         kind="tool_result",
         message=summary or "background task finished",
-        tool_id=getattr(message, "task_id", None),
+        tool_id=tool_id,
         tool=Tool(
             kind=ToolKind.UNKNOWN,
             status=status,
@@ -1621,6 +1755,7 @@ def task_notification_event(message: Any) -> Event:
         ),
         tool_result=result,
         tool_is_error=status == ToolStatus.FAILED,
+        agent=agent,
         usage=usage,
         provider_session_id=getattr(message, "session_id", None),
         provider_event_id=getattr(message, "uuid", None),
@@ -1687,10 +1822,16 @@ def task_agent_call(
     task_type: str | None,
     action: str,
     description: str | None,
+    task_id: object,
 ) -> AgentCall | None:
     if task_tool_kind(task_type) != ToolKind.AGENT:
         return None
-    return AgentCall(action=action, prompt=description)
+    return AgentCall(
+        action=action,
+        agent_id=task_id if isinstance(task_id, str) else None,
+        agent_type=task_type,
+        prompt=description,
+    )
 
 
 def task_usage(value: Any) -> tuple[Usage | None, int | None]:
@@ -1884,6 +2025,17 @@ def stream_event_text(event: Any) -> str | None:
             return text
     text = event.get("text")
     return text if isinstance(text, str) else None
+
+
+def stream_event_kind(event: Any) -> EventKind:
+    """Classify canonical Claude streaming text without guessing from payload text."""
+
+    if not isinstance(event, dict) or event.get("type") != "content_block_delta":
+        return EventKind.STREAM_EVENT
+    delta = event.get("delta")
+    if isinstance(delta, dict) and delta.get("type") == "text_delta":
+        return EventKind.TEXT_DELTA
+    return EventKind.STREAM_EVENT
 
 
 def first_text(*values: Any) -> str | None:

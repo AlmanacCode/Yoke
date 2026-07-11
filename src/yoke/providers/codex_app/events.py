@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 
 from pydantic import JsonValue
@@ -62,6 +62,7 @@ def read_turn(
     turn_id: str | None,
     timeout_seconds: float,
     request_handler: object | None = None,
+    on_event: Callable[[Event], None] | None = None,
 ) -> TurnResult:
     result = TurnResult()
     deadline = time.monotonic() + timeout_seconds
@@ -73,6 +74,9 @@ def read_turn(
         deadline,
         request_handler,
     ):
+        if on_event is not None:
+            for event in step.events:
+                on_event(event)
         result.events.extend(step.events)
     return result
 

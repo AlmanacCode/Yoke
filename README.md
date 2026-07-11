@@ -62,6 +62,28 @@ print(result.output)
 Swap `"codex"` for `"claude"` and the same agent runs there. Your existing
 Claude Code or ChatGPT login is all it needs — no API keys.
 
+Embedding applications can observe a one-shot run while it is happening:
+
+```python
+from yoke import RunOptions
+
+seen = []
+result = await harness.run(
+    "Implement the bundle loader.",
+    RunOptions(on_event=seen.append),
+)
+
+assert tuple(seen) == result.events
+```
+
+`on_event` is a synchronous callback receiving each normalized `Event` once.
+It is runtime-only—it is excluded from serialized options and agent folders.
+Live callback delivery is supported by the Claude Python SDK and Codex
+app-server surfaces. Passing `on_event` selects one of those surfaces when the
+surface is automatic, and raises `UnsupportedFeature` when an explicitly
+selected surface cannot deliver callbacks. Use `harness.stream(...)` for a
+portable event iterator.
+
 ## How it compares
 
 The question that places Yoke: **who runs the agent?**
@@ -115,9 +137,12 @@ agent = Agent(
 )
 ```
 
-A subagent is just another `Agent`. Claude runs declared subagents natively;
-Codex has no native equivalent, so Yoke compiles them into provider files —
-same definition, honest lowering.
+A subagent is just another `Agent`. Claude runs declared subagents through its
+native Agent tool. Codex app-server compiles the declaration into explicit
+guidance to use native `spawn_agent`, including requested model overrides, and
+normalizes collaboration events when the parent follows that guidance. This is
+model-driven orchestration, not deterministic tool enforcement. Codex SDK/CLI
+surfaces use clearly labeled compiled instructions or provider files.
 
 ## Workflows
 
@@ -176,7 +201,7 @@ for row in harness.explain().reports:
 | Sessions | native | native | native | resume-based |
 | Streaming | native | native | native transport | JSONL/process |
 | Skills | native | native skill roots | compiled | files/compiled |
-| Subagents | native | compiled | compiled | files/compiled |
+| Subagents | native | compiled → native tool | compiled | files/compiled |
 | Goals | provider loop | native state | compiled context | provider loop |
 | Workflows | portable Yoke | portable Yoke | portable Yoke | portable/limited |
 | Permissions/hooks | native callbacks | native request events | sandbox/approval | flags/config |

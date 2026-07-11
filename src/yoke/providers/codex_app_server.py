@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,6 +20,7 @@ from yoke.models import (
     Authentication,
     AuthMethod,
     Event,
+    Failure,
     Goal,
     GoalRun,
     Harness,
@@ -452,6 +453,14 @@ class CodexAppServer:
         turn_session = session.model_copy(
             update={"permissions": run_options.permissions or session.permissions}
         )
+        provider_session_event = Event(
+            kind="provider_session",
+            surface=self.surface,
+            message=f"codex provider session {thread.thread_id}",
+            provider_session_id=thread.thread_id,
+        )
+        if run_options.on_event is not None:
+            run_options.on_event(provider_session_event)
         result = await asyncio.to_thread(
             self._run_turn,
             thread,
@@ -460,15 +469,12 @@ class CodexAppServer:
             provider_schema(schema),
             codex_options_for_run(run_options),
             run_options.model,
+            run_options.on_event,
+            run_options.timeout_seconds,
         )
         result.events.insert(
             0,
-            Event(
-                kind="provider_session",
-                surface=self.surface,
-                message=f"codex provider session {thread.thread_id}",
-                provider_session_id=thread.thread_id,
-            ),
+            provider_session_event,
         )
         structured = parse_output(result.output, schema)
         failure = result.failure or structured.failure
@@ -518,6 +524,7 @@ class CodexAppServer:
         goal: Goal | None,
     ) -> AppServerThread:
         provider_options = codex_options(options)
+        app_server_options = codex_app_server_options(provider_options)
         self._initialize(process, provider_options)
         self._configure_skill_roots(process, harness)
         method = "thread/resume" if options.resume else "thread/start"
@@ -525,7 +532,11 @@ class CodexAppServer:
             harness,
             permissions,
             goal,
-            self.ephemeral,
+            (
+                self.ephemeral
+                if app_server_options.ephemeral is None
+                else app_server_options.ephemeral
+            ),
             provider_options,
             options.model or harness.agent.model,
         )
@@ -742,6 +753,8 @@ class CodexAppServer:
         output_schema: dict[str, Any] | None,
         provider_options: CodexOptions | dict[str, Any] | None,
         model: str | None = None,
+        on_event: Callable[[Event], None] | None = None,
+        timeout_seconds: float | None = None,
     ) -> TurnResult:
         turn_id = self._start_turn(
             thread,
@@ -751,14 +764,38 @@ class CodexAppServer:
             provider_options=provider_options,
             model=model,
         )
+        effective_timeout = timeout_seconds or self.turn_timeout_seconds
         try:
-            return read_turn(
-                thread.process,
-                thread.thread_id,
-                turn_id,
-                self.turn_timeout_seconds,
-                codex_request_handler(provider_options or thread.provider_options),
-            )
+            try:
+                return read_turn(
+                    thread.process,
+                    thread.thread_id,
+                    turn_id,
+                    effective_timeout,
+                    codex_request_handler(provider_options or thread.provider_options),
+                    (
+                        None
+                        if on_event is None
+                        else lambda event: on_event(
+                            event.model_copy(update={"surface": self.surface})
+                        )
+                    ),
+                )
+            except TimeoutError:
+                try:
+                    self._interrupt(thread)
+                except Exception:
+                    pass
+                return TurnResult(
+                    status=RunStatus.FAILED,
+                    failure=Failure(
+                        message=(
+                            "Codex app-server run timed out after "
+                            f"{effective_timeout:g} seconds"
+                        ),
+                        code="timeout",
+                    ),
+                )
         finally:
             thread.active_turn_id = None
 

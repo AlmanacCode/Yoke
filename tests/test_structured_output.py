@@ -114,6 +114,28 @@ async def messages():
     yield ResultMessage()
 
 
+@pytest.mark.asyncio
+async def test_claude_one_shot_timeout_returns_partial_typed_failure() -> None:
+    async def slow_messages():
+        yield type(
+            "AssistantMessage",
+            (),
+            {"content": [type("TextBlock", (), {"text": "partial"})()]},
+        )()
+        await asyncio.sleep(1)
+
+    result = await collect_messages(
+        "claude",
+        slow_messages(),
+        timeout_seconds=0.01,
+    )
+
+    assert result.status is RunStatus.FAILED
+    assert result.output == "partial"
+    assert result.failure is not None
+    assert result.failure.code == "timeout"
+
+
 async def session_messages():
     yield SystemMessage()
     yield ResultMessage()
@@ -290,6 +312,41 @@ def test_claude_collect_messages_deduplicates_final_result_text() -> None:
         "finished"
     ]
     assert result.output == "finished"
+
+
+def test_claude_collect_messages_delivers_each_returned_event_once() -> None:
+    class TextBlock:
+        text = "finished"
+
+    class AssistantMessage:
+        content = [TextBlock()]
+
+    class ResultMessage:
+        result = "finished"
+        structured_output = None
+        is_error = False
+        subtype = "success"
+
+    observed = []
+
+    async def callback_messages():
+        yield AssistantMessage()
+        assert [event.message for event in observed] == ["finished"]
+        yield ResultMessage()
+
+    result = asyncio.run(
+        collect_messages(
+            "claude",
+            callback_messages(),
+            surface="claude_python_sdk",
+            on_event=observed.append,
+        )
+    )
+
+    assert tuple(observed) == result.events
+    assert [event.message for event in observed if event.kind == "text"] == [
+        "finished"
+    ]
 
 
 def test_claude_collect_messages_deduplicates_fragmented_final_result_text() -> None:

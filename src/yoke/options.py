@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator
 
-from yoke.models import Channel, Effort, Goal, Permissions, YokeModel
+from yoke.models import Channel, Effort, Event, Goal, Permissions, YokeModel
 from yoke.policies import RequestPolicy
 from yoke.replay import WorkflowReplay
 from yoke.structured import OutputSchema
@@ -92,13 +92,32 @@ class RunOptions(YokeModel):
     inherit_goal: bool = True
     output_schema: OutputSchema | None = None
     max_turns: int | None = None
+    timeout_seconds: float | None = None
     permissions: Permissions | None = None
     provider: ProviderOptions | None = None
+    on_event: Callable[[Event], None] | None = Field(
+        default=None,
+        exclude=True,
+        json_schema_extra={
+            "runtime_only": True,
+            "reason": (
+                "Run event callbacks are live Python objects and do not "
+                "round-trip through folders."
+            ),
+        },
+    )
 
     def runtime_options(self) -> tuple[RuntimeOption, ...]:
         """Return active SDK-only fields that will not round-trip through folders."""
 
         return runtime_options(self)
+
+    @field_validator("timeout_seconds")
+    @classmethod
+    def require_positive_timeout(cls, value: float | None) -> float | None:
+        if value is not None and value <= 0:
+            raise ValueError("run timeout must be greater than zero")
+        return value
 
     def resolve_goal(self, agent_goal: Goal | None) -> Goal | None:
         """Return the explicit goal or the inherited agent goal."""
@@ -124,6 +143,8 @@ class RunOptions(YokeModel):
             features.append(Feature.GOAL)
         if self.output_schema is not None:
             features.append(Feature.STRUCTURED_OUTPUT)
+        if self.on_event is not None:
+            features.append(Feature.RUN_EVENT_CALLBACKS)
         if self.provider is not None:
             extend_unique(features, self.provider.features(provider=provider))
         return tuple(features)
@@ -712,6 +733,7 @@ class CollaborationSettings(YokeModel):
 class CodexAppServerOptions(YokeModel):
     """Codex app-server connection options."""
 
+    ephemeral: bool | None = None
     policy: RequestPolicy | dict[str, Any] | None = None
     request_handler: Any | None = Field(
         default=None,

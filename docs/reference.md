@@ -1406,6 +1406,17 @@ Some app-server options are SDK-only. For example, `request_handler` is a live
 Python callback for server requests, so it cannot be represented in a Yoke
 folder. Use `policy=` when the logic is a serializable `RequestPolicy`.
 
+Set `CodexAppServerOptions(ephemeral=True)` when a run should not persist its
+thread in Codex history. The default remains persistent so sessions can be
+resumed and forked. A native `Goal` always forces a persistent thread because
+Codex does not support goals on ephemeral threads.
+
+One-shot Claude SDK and Codex app-server runs can be bounded explicitly with
+`RunOptions(timeout_seconds=60)`. The default is unchanged and uses the
+provider adapter's normal lifetime. On expiry Yoke stops consuming the Claude
+response or interrupts the active Codex turn and returns a failed `Run` with
+`failure.code == "timeout"`; output already received from Claude is retained.
+
 ```python
 from yoke import CodexAppServerOptions, CodexOptions, ProviderOptions, RunOptions
 

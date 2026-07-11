@@ -701,8 +701,9 @@ FEATURE_LOWERING: dict[tuple[Provider, str, Feature], str] = {
         "Yoke executes workflow steps as multiple SDK thread turns."
     ),
     (Provider.CODEX, Surface.CODEX_APP_SERVER, Feature.DECLARED_SUBAGENTS): (
-        "Yoke subagents compile into app-server developer instructions; native "
-        "Codex collab-agent events remain provider-owned activity."
+        "Yoke compiles declared subagents into guidance for native Codex "
+        "spawn_agent calls, including requested model overrides, and normalizes "
+        "collab events when the parent delegates."
     ),
     (Provider.CODEX, Surface.CODEX_APP_SERVER, Feature.COLLAB_AGENT_TOOLS): (
         "Codex app-server emits native collabToolCall events, with legacy "
@@ -1018,6 +1019,11 @@ MATRIX: dict[tuple[Provider, str], Capabilities] = {
                 "Claude Python SDK exposes tag_session().",
             ),
             Feature.STREAMING: Support.NATIVE,
+            Feature.RUN_EVENT_CALLBACKS: (
+                Support.NATIVE,
+                "Claude Python SDK one-shot runs deliver normalized events "
+                "to a synchronous callback.",
+            ),
             Feature.STRUCTURED_OUTPUT: Support.NATIVE,
             Feature.MODELS: Support.UNSUPPORTED,
             Feature.LOGIN: (
@@ -1439,6 +1445,11 @@ MATRIX: dict[tuple[Provider, str], Capabilities] = {
                 Support.NATIVE,
                 "Yoke yields app-server notifications as they arrive.",
             ),
+            Feature.RUN_EVENT_CALLBACKS: (
+                Support.NATIVE,
+                "Yoke delivers app-server one-shot run events to a synchronous "
+                "callback as notifications arrive.",
+            ),
             Feature.STRUCTURED_OUTPUT: Support.NATIVE,
             Feature.MODELS: (
                 Support.NATIVE,
@@ -1466,12 +1477,13 @@ MATRIX: dict[tuple[Provider, str], Capabilities] = {
             ),
             Feature.INLINE_SUBAGENTS: (
                 Support.UNSUPPORTED,
-                "Native collab-agent activity is not the same as user-declared "
-                "Yoke subagents.",
+                "Use declared Yoke subagents so model and task semantics remain "
+                "explicit across providers.",
             ),
             Feature.DECLARED_SUBAGENTS: (
                 Support.COMPILED,
-                "Yoke-declared subagents compile into developer instructions.",
+                "Yoke compiles declared subagents into native spawn_agent "
+                "guidance; invocation remains model-driven.",
             ),
             Feature.COLLAB_AGENT_TOOLS: (
                 Support.NATIVE,
