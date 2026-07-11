@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -55,10 +56,15 @@ def deploy_runtime(
     """Compile runtime-only native files under a unique temporary directory."""
 
     provider = Provider(provider)
-    if parent is not None:
-        parent = parent.expanduser().resolve()
-        parent.mkdir(parents=True, exist_ok=True)
-    root = Path(tempfile.mkdtemp(prefix=f"yoke-{provider.value}-", dir=parent))
+    parent = runtime_parent(parent)
+    parent.mkdir(parents=True, exist_ok=True)
+    reclaim_stale_deployments(parent)
+    root = Path(
+        tempfile.mkdtemp(
+            prefix=f"yoke-{provider.value}-{os.getpid()}-",
+            dir=parent,
+        )
+    )
     deployment = RuntimeDeployment(
         provider=provider,
         root=root,
@@ -74,6 +80,53 @@ def deploy_runtime(
     except Exception:
         deployment.cleanup()
         raise
+
+
+def runtime_parent(parent: Path | None) -> Path:
+    if parent is None:
+        return Path(tempfile.gettempdir()).resolve()
+    return parent.expanduser().resolve()
+
+
+def reclaim_stale_deployments(parent: Path) -> None:
+    """Remove crashed Yoke deployments without touching live owners."""
+
+    for candidate in parent.iterdir():
+        owner_pid = runtime_owner_pid(candidate.name)
+        if (
+            owner_pid is None
+            or candidate.is_symlink()
+            or not candidate.is_dir()
+            or process_is_alive(owner_pid)
+        ):
+            continue
+        shutil.rmtree(candidate, ignore_errors=True)
+
+
+def runtime_owner_pid(name: str) -> int | None:
+    parts = name.split("-", 3)
+    if len(parts) != 4 or parts[0] != "yoke" or parts[1] not in {
+        Provider.CLAUDE.value,
+        Provider.CODEX.value,
+    }:
+        return None
+    try:
+        pid = int(parts[2])
+    except ValueError:
+        return None
+    return pid if pid > 0 else None
+
+
+def process_is_alive(pid: int) -> bool:
+    if pid == os.getpid():
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def _write_codex(agent: Agent, deployment: RuntimeDeployment) -> None:

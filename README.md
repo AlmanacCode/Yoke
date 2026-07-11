@@ -146,7 +146,8 @@ fails honestly. Codex SDK/CLI surfaces retain their documented lowerings.
 Runtime files are derived outside `cwd` and removed when the session closes.
 Set `Harness(runtime_root=...)` to choose their parent cache directory. This is
 different from `agent.bundle(...).write(...)`, which explicitly exports durable
-provider files for a project.
+provider files for a project. A later deployment reclaims runtime directories
+whose owning process exited before normal cleanup.
 
 ## Workflows
 

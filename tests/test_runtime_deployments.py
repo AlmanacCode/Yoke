@@ -492,3 +492,26 @@ def test_codex_concurrent_sessions_have_isolated_runtimes(tmp_path: Path) -> Non
         assert not any(root.exists() for root in roots)
 
     asyncio.run(exercise())
+
+
+def test_runtime_deployment_reclaims_only_dead_owned_directories(
+    tmp_path: Path,
+) -> None:
+    import os
+
+    dead = tmp_path / "yoke-codex-99999999-dead"
+    active = tmp_path / f"yoke-claude-{os.getpid()}-active"
+    legacy = tmp_path / "yoke-codex-legacy"
+    unrelated = tmp_path / "other-runtime"
+    for path in (dead, active, legacy, unrelated):
+        path.mkdir()
+
+    deployment = deploy_runtime(Agent(instructions="test"), "codex", tmp_path)
+    try:
+        assert not dead.exists()
+        assert active.exists()
+        assert legacy.exists()
+        assert unrelated.exists()
+        assert deployment.root.name.startswith(f"yoke-codex-{os.getpid()}-")
+    finally:
+        deployment.cleanup()
