@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from yoke import (
     EventKind,
     GoalStatus,
@@ -10,6 +12,40 @@ from yoke import (
 )
 from yoke.providers.codex_app.events import TurnResult, map_notification, read_turn_step
 from yoke.providers.codex_app.rpc import ServerResponse
+
+
+@pytest.mark.parametrize("item_type", ["agentMessage", "reasoning", "userMessage"])
+def test_internal_item_started_is_not_reported_as_a_tool(item_type: str) -> None:
+    events = map_notification(
+        {
+            "method": "item/started",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "item": {"id": "item-1", "type": item_type},
+            },
+        },
+        TurnResult(),
+    )
+
+    assert events == []
+
+
+@pytest.mark.parametrize("item_type", ["reasoning", "userMessage"])
+def test_internal_item_completed_is_not_reported_as_a_tool(item_type: str) -> None:
+    events = map_notification(
+        {
+            "method": "item/completed",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "item": {"id": "item-1", "type": item_type},
+            },
+        },
+        TurnResult(),
+    )
+
+    assert events == []
 
 
 def test_collab_agent_tool_call_maps_to_agent_tool_event() -> None:

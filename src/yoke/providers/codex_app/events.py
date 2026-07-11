@@ -230,6 +230,8 @@ def map_notification(notification: JsonObject, result: TurnResult) -> list[Event
         return [file_change_patch_updated_event(params, notification)]
     if method == "item/started":
         item = as_record(params.get("item"))
+        if is_internal_item(item):
+            return []
         return [tool_event("tool_use", item, ToolStatus.STARTED, params, notification)]
     if method == "item/completed":
         item = as_record(params.get("item"))
@@ -247,6 +249,8 @@ def map_notification(notification: JsonObject, result: TurnResult) -> list[Event
                     raw=notification,
                 )
             ]
+        if is_internal_item(item):
+            return []
         return [
             tool_event(
                 "tool_result",
@@ -650,6 +654,11 @@ def item_title(item: JsonObject) -> str:
     if is_collab_tool_call(item):
         return f"Agent {string_field(item, 'tool') or 'tool'}"
     return item_type or "Tool"
+
+
+def is_internal_item(item: JsonObject) -> bool:
+    """Return whether an app-server item is narrative state, not a tool call."""
+    return string_field(item, "type") in {"agentMessage", "reasoning", "userMessage"}
 
 
 def tool_event(
