@@ -1,0 +1,21 @@
+topics:
+  - slug: wiki
+    title: Wiki
+    description: Orientation and maintenance standards for the repo wiki
+    parents: []
+  - slug: concepts
+    title: Concepts
+    description: Core vocabulary and mental models for this codebase
+    parents: []
+  - slug: architecture
+    title: Architecture
+    description: System boundaries and flows that shape implementation work
+    parents: []
+  - slug: authoring
+    title: Authoring
+    description: Filesystem-authored agents, skills, subagents, workflows, and collections
+    parents: [concepts]
+  - slug: runtime
+    title: Runtime
+    description: Runs, sessions, events, and stored execution state
+    parents: [concepts]
