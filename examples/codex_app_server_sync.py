@@ -5,7 +5,6 @@ from pathlib import Path
 from yoke import Agent, Harness, Permissions
 from yoke.providers import CodexAppServer
 
-
 agent = Agent(
     instructions="Reply with exactly: yoke sync works",
     permissions=Permissions(access="read", approval="never", network=False),

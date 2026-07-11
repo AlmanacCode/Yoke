@@ -91,3 +91,7 @@ good
 
 This exercised `Harness.workflow(...)` with a main-agent step followed by a
 subagent step on the real Claude Python SDK surface.
+
+## 2026-07-04 addendum
+
+Later workflow slices added bounded parallel scheduling through `WorkflowOptions.concurrency`, run-option propagation through `WorkflowOptions.run`, step-level run overrides, step output schemas, folder round-tripping, and provider-surface planning for native workflows. The core decision still stands: portable `Workflow(steps=...)` is Yoke-owned orchestration over provider turns, while `Workflow(script=...)` requires a provider-native workflow primitive such as Claude TypeScript SDK's documented `Workflow` tool.

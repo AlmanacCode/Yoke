@@ -1,20 +1,111 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/AlmanacCode/Yoke/main/docs/assets/banner.png" alt="Yoke — two oxen, one carved yoke: Claude and Codex pulling one load" width="100%" />
+</p>
+
+<p align="center">
+  <a href="https://www.python.org/"><img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white"></a>
+  <a href="https://peps.python.org/pep-0561/"><img alt="Typed" src="https://img.shields.io/badge/typed-py.typed-2b5b84"></a>
+  <a href="https://claude.com/claude-code"><img alt="Claude harness" src="https://img.shields.io/badge/harness-Claude-D97757?logo=anthropic&logoColor=white"></a>
+  <a href="https://openai.com/codex/"><img alt="Codex harness" src="https://img.shields.io/badge/harness-Codex-4B68F9?logo=openai&logoColor=white"></a>
+  <a href="https://github.com/AlmanacCode/Yoke/blob/main/LICENSE.md"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-df7b40"></a>
+</p>
+
 # Yoke
 
-Yoke is a provider-neutral harness SDK for agent systems.
+**A Python SDK for building agents on Claude Code and Codex.**
 
-It is for people who want serious coding agents without rebuilding the agent
-loop. Claude and Codex already provide powerful harnesses. Yoke lets you define
-the system once, then run it on the surface that fits the job.
+Claude Code and Codex have become general-purpose agents: give them
+instructions, skills, and subagents, and they can be shaped to any task. Yoke
+lets you reuse them from code — one `Harness` that drives both.
+
+<p align="center">
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#how-it-compares">How it compares</a> ·
+  <a href="#sessions">Sessions</a> ·
+  <a href="#skills">Skills</a> ·
+  <a href="#subagents">Subagents</a> ·
+  <a href="#workflows">Workflows</a> ·
+  <a href="#goals">Goals</a> ·
+  <a href="#surfaces">Surfaces</a> ·
+  <a href="#cli">CLI</a>
+</p>
+
+## Quickstart
+
+```bash
+pip install almanac-yoke
+```
+
+Install a provider extra when you want Yoke to manage that SDK directly:
+
+```bash
+pip install 'almanac-yoke[claude]'  # or [codex], or [all]
+```
+
+Define an agent, pick a harness, run:
 
 ```python
 from pathlib import Path
 
-from yoke import Agent, Goal, Harness, Skill
+from yoke import Agent, Goal, Harness
 
 agent = Agent(
     instructions="You are a careful maintainer. Make small, safe changes.",
-    goal=Goal(objective="Finish the requested implementation safely."),
+    goal=Goal("Finish the requested implementation safely."),
+)
+harness = Harness("codex", agent=agent, cwd=Path.cwd())
+
+result = await harness.run("Implement the bundle loader.")
+print(result.output)
+```
+
+Swap `"codex"` for `"claude"` and the same agent runs there. Your existing
+Claude Code or ChatGPT login is all it needs — no API keys.
+
+## How it compares
+
+The question that places Yoke: **who runs the agent?**
+
+| | The agent runs in | Yoke |
+| --- | --- | --- |
+| [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/overview) · [Codex SDK](https://developers.openai.com/codex/sdk) | the lab's harness — one provider each | builds on them. They are the surfaces Yoke drives; one definition runs on both. |
+| [Pydantic AI](https://ai.pydantic.dev) · [LangChain](https://www.langchain.com) | your process — a loop you assemble over model APIs | starts from a different premise: the harness already is the agent, so there is no loop to assemble. |
+| [Eve](https://github.com/vercel/eve) | Eve's own durable runtime, deployed on Vercel | is closest in spirit — an agent is a directory — but compiles that directory onto Claude and Codex instead of shipping a runtime. |
+
+## Sessions
+
+```python
+session = await harness.start()
+
+plan = await session.run("Draft the migration plan.")
+step = await session.run("Apply step one.")
+
+await session.close()
+```
+
+State lives with the provider; Yoke holds the handle. Sessions are native on
+every surface except the Codex CLI, where they work by resuming threads.
+
+## Skills
+
+```python
+from yoke import Skill
+
+agent = Agent(
+    instructions="You are a careful maintainer.",
     skills=(Skill(path=Path("skills/source-grounding")),),
+)
+```
+
+A skill is a folder with a `SKILL.md`. Claude loads skills natively, the Codex
+app-server mounts them as native skill roots, and other surfaces get them
+compiled to files.
+
+## Subagents
+
+```python
+agent = Agent(
+    instructions="You are a careful maintainer.",
     subagents={
         "reviewer": Agent(
             description="Find correctness and architecture risks.",
@@ -22,49 +113,83 @@ agent = Agent(
         ),
     },
 )
-
-result = await (
-    Harness(provider="claude", agent=agent, cwd=Path.cwd())
-    .run("Implement the bundle loader.")
-)
 ```
 
-The API is still allowed to change. Yoke is being pressure-tested against real
-Claude and Codex harnesses as it grows.
+A subagent is just another `Agent`. Claude runs declared subagents natively;
+Codex has no native equivalent, so Yoke compiles them into provider files —
+same definition, honest lowering.
 
-## Why Yoke?
-
-Most agent libraries help you create a new agent runtime. Yoke takes another
-path:
-
-> define the system, then yoke it to Claude or Codex.
-
-Yoke aims to support:
-
-- agents
-- skills
-- subagents
-- workflows
-- goals
-- sessions
-- event streams
-- provider-specific strengths
-
-Without forcing Claude and Codex into a weak fake common denominator.
-
-## SDK and folder parity
-
-Yoke should feel natural in Python:
+## Workflows
 
 ```python
-Agent(
-    instructions="...",
-    skills=(Skill(path=Path("skills/source-grounding")),),
-    subagents={"reviewer": Agent(description="...", instructions="...")},
+from yoke import Step, Workflow, WorkflowOptions
+
+workflow = Workflow(
+    name="review",
+    steps=(
+        Step(name="draft", agent="main", prompt="Draft release notes."),
+        Step(
+            name="review",
+            agent="reviewer",
+            depends_on=("draft",),
+            prompt="Review this draft: {draft}",
+        ),
+    ),
+)
+
+result = await harness.workflow(
+    workflow,
+    options=WorkflowOptions(timeout_seconds=120, step_timeout_seconds=60),
 )
 ```
 
-And natural as a folder:
+A workflow is a small dependency graph over the agent and its subagents;
+`main` is the reserved name for the root agent, and `WorkflowOptions` bounds
+the run. Neither provider has a native equivalent yet, so workflows are
+portable Yoke constructs — they run the same on every surface.
+
+## Goals
+
+```python
+from yoke import Goal
+
+session = await session.set_goal(Goal("Land the bundle loader.", token_budget=200_000))
+print(await session.get_goal())
+```
+
+A goal is intent that outlives a single prompt. On the Codex app-server it is
+real thread state — readable, replaceable, clearable. Everywhere else it
+compiles into the provider loop, and `explain()` tells you which you got.
+
+## No pretending
+
+Claude and Codex expose different primitives, and Yoke does not flatten them
+into a weak common denominator. The capability map is part of the API:
+
+```python
+for row in harness.explain().reports:
+    print(row.feature, row.support, row.lowering)  # native, compiled, emulated, unsupported
+```
+
+| Feature | Claude SDK | Codex app-server | Codex SDK | Codex CLI |
+| --- | --- | --- | --- | --- |
+| Sessions | native | native | native | resume-based |
+| Streaming | native | native | native transport | JSONL/process |
+| Skills | native | native skill roots | compiled | files/compiled |
+| Subagents | native | compiled | compiled | files/compiled |
+| Goals | provider loop | native state | compiled context | provider loop |
+| Workflows | portable Yoke | portable Yoke | portable Yoke | portable/limited |
+| Permissions/hooks | native callbacks | native request events | sandbox/approval | flags/config |
+
+## Agents are folders
+
+Everything defined in Python can be saved as files, edited by hand, and loaded
+back:
+
+```python
+agent.save("agent")
+agent = Agent.from_folder("agent")
+```
 
 ```text
 agent/
@@ -74,195 +199,81 @@ agent/
     source-grounding/SKILL.md
   subagents/
     reviewer/
-      agent.yaml
-      instructions.md
   workflows/
+    ship/
 ```
 
-Neither form should be a second-class export of the other.
-
-Folder agents can be loaded directly:
+Provider files like `.claude/` and `.codex/` are compiled from this source,
+only when you ask:
 
 ```python
-agent = Agent.from_folder("agent")
+agent.bundle(provider="codex", surface="codex_cli").write(Path.cwd())
 ```
 
-The loader understands:
+## Surfaces
 
-- `agent.yaml`
-- `instructions.md`
-- sorted markdown files in `instructions/`
-- flat skills in `skills/*.md`
-- packaged skills in `skills/<name>/SKILL.md`
-- subagents in `subagents/<name>/`
-- workflows in `workflows/*.yaml`
-
-Local folder skills are parsed into `Skill(name, description, path, instructions)`.
-Yoke preserves provider-native discovery when the surface supports it:
-
-| Surface | Packaged folder skills | Inline text skills |
-| --- | --- | --- |
-| Claude Python SDK | local plugin root | prompt-compiled |
-| Codex app-server | `skills/extraRoots/set` | prompt-compiled |
-| Codex CLI | prompt-compiled | prompt-compiled |
-
-That distinction is load-bearing. A native skill can bring supporting files,
-scripts, and provider UI affordances. A prompt-compiled skill is portable text.
-
-## Surfaces matter
-
-Yoke does not pretend that "Claude" or "Codex" is one uniform thing.
-
-The real shape is:
+This is the deeper layer:
 
 ```text
-provider -> surface -> features
+agent definition -> provider surface -> real harness
 ```
 
-Current surfaces:
+Each provider ships more than one way in. `Harness("codex")` picks the
+strongest one for you (the app-server); address a surface directly when you
+require an exact one:
 
-| Provider | Surface | Status |
-| --- | --- | --- |
-| Claude | `claude_python_sdk` | real one-shot, live sessions, plugins, skills, subagents |
-| Codex | `codex_cli` | real one-shot and resumable sessions |
-| Codex | `codex_app_server` | sessions, typed events, native skill roots, mutable goals |
+| Surface | What it is |
+| --- | --- |
+| `codex:app` | Codex app-server — sessions, native goals, skill roots |
+| `codex:sdk` | Codex Python SDK |
+| `codex:cli` | Codex CLI — `codex exec`, resumable threads |
+| `claude:sdk` | Claude Agent SDK for Python |
 
-This distinction matters. Codex app-server has primitives such as mutable
-thread goals that `codex exec --json` does not expose. Claude Python SDK has
-live client sessions, hooks, MCP, skills, and programmatic subagents, while
-filesystem settings are a separate surface.
-
-Yoke adapters declare capabilities per surface so the SDK does not flatten
-provider-specific strengths into a fake common denominator.
-
-Events use small Yoke nouns instead of provider prose scraping. `Event` can carry
-`Tool` display metadata, `Usage`, provider session ids, source thread/turn ids,
-and raw provider payloads.
-
-One important Codex app-server wrinkle: native goals require a non-ephemeral
-thread. If a `Goal` is attached, Yoke starts a persistent app-server thread
-instead of an ephemeral maintenance-style thread.
-
-Native goals are explicit session operations:
+`discover` reports what this machine already has — surfaces installed, logins
+ready, models available — and picks the first ready surface satisfying the
+requested features:
 
 ```python
-session = await harness.start()
-session = await session.set_goal(Goal("Finish the implementation safely."))
-goal = await session.get_goal()
-session = await session.clear_goal()
+from yoke import Feature, discover
+
+found = await discover("codex", Path.cwd(), agent)  # reuses your local login
+
+for surface in found.surfaces:
+    print(surface.surface, [model.id for model in surface.models])
+
+harness = found.harness(Feature.STREAMING)
 ```
 
-Claude and Codex CLI currently receive goals as prompt/task-budget context.
-Codex app-server owns readable mutable thread goals through `thread/goal/*`.
+Claude also accepts runtime-only `Credentials` (redacted, never serialized);
+Codex logins persist provider state, so they go through an explicit
+`await harness.login(...)`.
 
-Yoke has built-in adapters for the common surfaces. The clean path works without
-manual registration:
+## CLI
 
-```python
-harness = Harness(provider="codex", surface="codex_app_server", agent=agent, cwd=repo)
-result = await harness.run("Use the source-grounding skill.")
+The same agents and folders, from the shell:
+
+```bash
+yoke run agents codealmanac "Review this repo"
+yoke explain agents codealmanac
+yoke status agents codealmanac
+yoke install agents codealmanac --provider codex:cli
+yoke runs
 ```
 
-Embedded apps can still own adapter construction explicitly:
-
-```python
-from yoke.providers import CodexAppServer
-
-harness = harness.with_adapter(CodexAppServer(client_name="my-app"))
-```
-
-## Sessions
-
-One-shot is the convenience path:
-
-```python
-result = await harness.run("Diagnose the failing test.")
-```
-
-Plain scripts can use the sync twin:
-
-```python
-result = harness.run_sync("Diagnose the failing test.")
-```
-
-Sessions are the multi-turn path:
-
-```python
-session = await harness.start()
-try:
-    first = await session.run("Remember the word yoke.")
-    second = await session.run("What word did I ask you to remember?")
-finally:
-    await session.close()
-```
-
-Claude sessions are live SDK clients. Codex CLI sessions are persisted thread
-ids resumed through `codex exec resume`. Codex app-server sessions can resume
-persistent app-server threads by id:
-
-```python
-from yoke import SessionOptions
-
-session = await harness.start(SessionOptions(resume=thread_id))
-```
-
-Codex app-server sessions are persistent by default so goals can be set later.
-For throwaway app-server threads, construct `CodexAppServer(ephemeral=True)`.
-
-Both paths have been smoke-tested against real local harnesses.
-
-## Workflows
-
-Workflows are Yoke orchestration first:
-
-```python
-workflow = Workflow(
-    name="review",
-    steps=(
-        Step(name="draft", agent="main", prompt="Draft: {input}"),
-        Step(name="review", agent="reviewer", depends_on=("draft",), prompt="{draft}"),
-    ),
-)
-
-result = await harness.workflow(workflow, "write release notes")
-```
-
-This is intentionally not provider-native yet. It composes provider runs and
-subagents through Yoke. Eve remains the reference for a future durable workflow
-runtime.
-
-## Design references
-
-Yoke is inspired by:
-
-- Eve for filesystem-first authoring and discover/compile/run separation.
-- Claude Agent SDK for sessions, subagents, skills, hooks, MCP, plugins, and task budgets.
-- Codex CLI/SDK for exec JSONL, resumable threads, and structured output.
-- Codex app-server for thread state, goals, typed events, and richer app protocol.
-- Cosmic Python for ports, adapters, and clean composition.
+CLI runs leave inspectable snapshots under `.yoke/runs/`. SDK users can persist
+returned results explicitly with `RunStore.at(".yoke/runs").record(result)`.
 
 ## Status
 
-Yoke is being designed and built. The current code is an early runtime, not a
-finished framework.
+Yoke is an early alpha. Everything shown above is built and smoke-tested
+against live providers. The API may still change before 1.0; durable workflow
+execution and typed coverage of every provider-specific option remain future
+work.
 
-Current real smokes include:
+- [Quickstart](docs/quickstart.md)
+- [Reference](docs/reference.md)
+- [Design notes](docs/notes/) — every decision, recorded
+- [Contributing](CONTRIBUTING.md)
+- [Security](SECURITY.md)
 
-- `examples/claude_run.py`
-- `examples/claude_session.py`
-- `examples/codex_run.py`
-- `examples/codex_session.py`
-- `examples/codex_app_server_resume.py`
-- `examples/codex_app_server_goal.py`
-- `examples/workflow_claude.py`
-- `examples/folder_claude.py`
-- Codex app-server one-shot and sync examples
-- Claude folder skill as native local plugin
-- Codex app-server folder skill as native extra root
-
-Next milestones:
-
-1. Deepen Codex app-server resume/thread-read behavior.
-2. Tighten event mapping across Claude and Codex so UIs can render runs uniformly.
-3. Durable workflow semantics inspired by Eve.
-4. CodeAlmanac integration through Yoke imports once the consuming worktree is ready.
+Apache-2.0. See [LICENSE.md](LICENSE.md).

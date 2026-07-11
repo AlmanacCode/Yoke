@@ -20,7 +20,9 @@ async def main() -> None:
     )
     if first.session is None:
         raise RuntimeError("Codex did not return a resumable session")
-    second = await first.session.run("What word did I ask you to remember? Say only it.")
+    second = await first.session.run(
+        "What word did I ask you to remember? Say only it."
+    )
     print(first.output)
     print(second.output)
 

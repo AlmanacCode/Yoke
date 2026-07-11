@@ -5,12 +5,16 @@ from __future__ import annotations
 from typing import Any
 
 from yoke.providers.codex_app.skills import is_native_skill_path
+from yoke.providers.compiled import compiled_subagents
 
 
 def developer_instructions(agent: Any) -> str | None:
     parts: list[str] = []
     if agent.instructions:
         parts.append(agent.instructions)
+    subagent_text = compiled_subagents(agent)
+    if subagent_text:
+        parts.append(subagent_text)
     skill_text = compiled_skills(agent)
     if skill_text:
         parts.append(skill_text)

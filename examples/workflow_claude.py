@@ -16,7 +16,13 @@ async def main() -> None:
             "reviewer": Agent(
                 description="Return one concise review word.",
                 instructions="Reply with exactly one lowercase word.",
-                tools=Tools(read=False, write=False, shell=False, web=False, agent=False),
+                tools=Tools(
+                    read=False,
+                    write=False,
+                    shell=False,
+                    web=False,
+                    agent=False,
+                ),
                 permissions=Permissions(approval="never"),
             ),
         },

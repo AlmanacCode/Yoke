@@ -39,22 +39,31 @@ def request_rpc(
 def respond_to_server_request(
     process: JsonRpcLineProcess,
     message: JsonObject,
+    response: ServerResponse | JsonObject | None = None,
 ) -> None:
     request_id = message.get("id")
     method = string_field(message, "method")
     if request_id is None or method is None:
         return
-    response = noninteractive_response(method)
-    if response.error is not None:
-        process.write({"id": request_id, "error": response.error})
+    resolved = normalize_server_response(
+        response if response is not None else noninteractive_response(method)
+    )
+    if resolved.error is not None:
+        process.write({"id": request_id, "error": resolved.error})
         return
-    process.write({"id": request_id, "result": response.result})
+    process.write({"id": request_id, "result": resolved.result})
 
 
 @dataclass(frozen=True)
 class ServerResponse:
     result: JsonObject | None = None
     error: JsonObject | None = None
+
+
+def normalize_server_response(response: ServerResponse | JsonObject) -> ServerResponse:
+    if isinstance(response, ServerResponse):
+        return response
+    return ServerResponse(result=response)
 
 
 def noninteractive_response(method: str) -> ServerResponse:

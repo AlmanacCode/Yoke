@@ -7,15 +7,27 @@ from typing import Any
 
 import yaml
 
-from yoke.models import Agent, Goal, Permissions, Skill, Step, Tools, Workflow
+from yoke.models import (
+    Agent,
+    Collection,
+    Goal,
+    Permissions,
+    Skill,
+    Step,
+    Tools,
+    Workflow,
+)
 
 AGENT_FILE = "agent.yaml"
+COLLECTION_FILE = "yoke.yaml"
 INSTRUCTIONS_FILE = "instructions.md"
 INSTRUCTIONS_DIR = "instructions"
 SKILL_FILE = "SKILL.md"
 SKILLS_DIR = "skills"
 SUBAGENTS_DIR = "subagents"
 WORKFLOWS_DIR = "workflows"
+WORKFLOW_PROGRAM_FILE = "workflow.py"
+WORKFLOW_SCRIPT_FILE = "script.js"
 
 
 def load(path: str | Path) -> Agent:
@@ -38,8 +50,10 @@ def load(path: str | Path) -> Agent:
         description=config.get("description"),
         model=optional_inherit(config.get("model")),
         effort=config.get("effort"),
-        goal=Goal(**goal) if isinstance(goal, dict) else None,
-        tools=Tools(**config["tools"]) if isinstance(config.get("tools"), dict) else Tools(),
+        goal=parse_goal(goal),
+        tools=Tools(**config["tools"])
+        if isinstance(config.get("tools"), dict)
+        else Tools(),
         permissions=Permissions(**config["permissions"])
         if isinstance(config.get("permissions"), dict)
         else Permissions(),
@@ -47,6 +61,31 @@ def load(path: str | Path) -> Agent:
         subagents=subagents,
         workflows=workflows,
         options=config.get("options", {}),
+    )
+
+
+def load_collection(path: str | Path) -> Collection:
+    """Load an agent collection from ``yoke.yaml``."""
+
+    root = Path(path)
+    config = read_yaml(root / COLLECTION_FILE)
+    agents = config.get("agents")
+    if not isinstance(agents, dict):
+        raise ValueError(f"{root / COLLECTION_FILE} must define an agents mapping")
+    paths: dict[str, Path] = {}
+    for name, agent_path in agents.items():
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError("collection agent names must be non-empty strings")
+        if not isinstance(agent_path, str) or not agent_path.strip():
+            raise ValueError(f"collection agent {name!r} must map to a path string")
+        paths[name] = Path(agent_path)
+    default_provider = config.get("default_provider")
+    if default_provider is not None and not isinstance(default_provider, str):
+        raise ValueError("default_provider must be a string")
+    return Collection(
+        root=root,
+        agents=paths,
+        default_provider=default_provider,
     )
 
 
@@ -65,6 +104,14 @@ def optional_inherit(value: Any) -> Any:
     if value == "inherit":
         return None
     return value
+
+
+def parse_goal(value: Any) -> Goal | None:
+    if isinstance(value, str):
+        return Goal(value)
+    if isinstance(value, dict):
+        return Goal(**value)
+    return None
 
 
 def read_optional_text(path: Path) -> str | None:
@@ -168,11 +215,122 @@ def load_workflows(path: Path) -> dict[str, Workflow]:
     workflows: dict[str, Workflow] = {}
     for child in sorted(path.glob("*.yaml")) + sorted(path.glob("*.yml")):
         data = read_yaml(child)
-        name = str(data.get("name") or child.stem)
-        steps = tuple(Step(**step) for step in data.get("steps", []))
-        workflows[name] = Workflow(
-            name=name,
-            description=data.get("description"),
-            steps=steps,
-        )
+        data["name"] = path_identity(child.stem, data.get("name"), child, "workflow")
+        workflow = Workflow(**data)
+        workflows[workflow.name] = workflow
+    for child in sorted(path.iterdir()):
+        if child.is_dir():
+            workflow = load_markdown_workflow(child)
+            workflows[workflow.name] = workflow
     return workflows
+
+
+def load_markdown_workflow(path: Path) -> Workflow:
+    """Load workflows/<name>/*.md as path-derived workflow steps."""
+
+    steps: list[dict[str, Any]] = []
+    description: str | None = None
+    config = read_yaml(path / "workflow.yaml")
+    workflow_name = path_identity(
+        path.name,
+        config.get("name"),
+        path / "workflow.yaml",
+        "workflow",
+    )
+    if isinstance(config.get("description"), str):
+        description = config["description"]
+    script_path = path / WORKFLOW_SCRIPT_FILE
+    program_path = path / WORKFLOW_PROGRAM_FILE
+    if program_path.exists():
+        return Workflow(
+            name=workflow_name,
+            description=description,
+            language="python",
+            program_path=program_path,
+            args=config.get("args"),
+        )
+    if script_path.exists():
+        return Workflow(
+            name=workflow_name,
+            description=description,
+            language=str(config.get("language") or "javascript"),
+            script=script_path.read_text().strip(),
+            args=config.get("args"),
+            resume_from_run_id=config.get("resume_from_run_id")
+            or config.get("resumeFromRunId"),
+        )
+    if config.get("script_path") is not None or config.get("scriptPath") is not None:
+        return Workflow(
+            name=workflow_name,
+            description=description,
+            language=str(config.get("language") or "javascript"),
+            script_path=Path(str(config.get("script_path") or config["scriptPath"])),
+            native_name=config.get("native_name") or config.get("nativeName"),
+            args=config.get("args"),
+            resume_from_run_id=config.get("resume_from_run_id")
+            or config.get("resumeFromRunId"),
+        )
+    if config.get("native_name") is not None or config.get("nativeName") is not None:
+        return Workflow(
+            name=workflow_name,
+            description=description,
+            language=str(config.get("language") or "javascript"),
+            native_name=str(config.get("native_name") or config["nativeName"]),
+            args=config.get("args"),
+            resume_from_run_id=config.get("resume_from_run_id")
+            or config.get("resumeFromRunId"),
+        )
+    for child in sorted(path.glob("*.md")):
+        frontmatter, body = read_markdown_with_frontmatter(child)
+        if child.name == "README.md" and not body:
+            continue
+        step_name = path_identity(child.stem, frontmatter.get("name"), child, "step")
+        step: dict[str, Any] = {
+            "name": step_name,
+            "agent": str(frontmatter.get("agent") or "main"),
+            "prompt": body,
+        }
+        depends_on = frontmatter.get("depends_on", frontmatter.get("depends"))
+        if depends_on is not None:
+            step["depends_on"] = tuple_list(depends_on)
+        output_schema = frontmatter.get("output_schema", frontmatter.get("schema"))
+        if output_schema is not None:
+            step["output_schema"] = output_schema
+        if frontmatter.get("run") is not None:
+            step["run"] = frontmatter["run"]
+        steps.append(step)
+    if not steps:
+        raise ValueError(f"{path} must contain at least one markdown workflow step")
+    return Workflow(
+        name=workflow_name,
+        description=description,
+        steps=tuple(Step(**step) for step in steps),
+    )
+
+
+def path_identity(
+    expected: str,
+    configured: Any,
+    path: Path,
+    kind: str,
+) -> str:
+    """Return the path-derived identity and reject silent metadata renames."""
+
+    if configured is None:
+        return expected
+    if str(configured) == expected:
+        return expected
+    raise ValueError(
+        f"{path} cannot rename {kind} {expected!r} to {configured!r}; "
+        "folder workflow identity comes from the path"
+    )
+
+
+def tuple_list(value: Any) -> tuple[str, ...]:
+    """Normalize scalar or list YAML values into a tuple of strings."""
+
+    if isinstance(value, str):
+        return (value,)
+    if isinstance(value, list | tuple):
+        return tuple(str(item) for item in value)
+    raise ValueError("depends_on must be a string or list of strings")

@@ -13,7 +13,12 @@ async def main() -> None:
         permissions=Permissions(access="read", approval="never", network=False),
     )
     result = await (
-        Harness(provider="codex", surface="codex_app_server", agent=agent, cwd=Path.cwd())
+        Harness(
+            provider="codex",
+            surface="codex_app_server",
+            agent=agent,
+            cwd=Path.cwd(),
+        )
         .with_adapter(CodexAppServer())
         .run("Say the required phrase.")
     )

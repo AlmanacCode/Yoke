@@ -61,7 +61,12 @@ class CodexCli:
             if approval:
                 args.extend(["--config", f"approval_policy={json.dumps(approval)}"])
             if effort:
-                args.extend(["--config", f"model_reasoning_effort={json.dumps(effort)}"])
+                args.extend(
+                    [
+                        "--config",
+                        f"model_reasoning_effort={json.dumps(effort)}",
+                    ]
+                )
             if network is not None:
                 args.extend(
                     [
