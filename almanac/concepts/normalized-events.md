@@ -6,6 +6,12 @@ sources:
   - id: models
     type: file
     path: src/yoke/models.py
+  - id: readme
+    type: file
+    path: README.md
+  - id: options
+    type: file
+    path: src/yoke/options.py
   - id: codex-events
     type: file
     path: src/yoke/providers/codex_app/events.py
@@ -18,6 +24,9 @@ sources:
   - id: codex-event-tests
     type: file
     path: tests/test_codex_app_events.py
+  - id: capability-tests
+    type: file
+    path: tests/test_capabilities.py
 ---
 
 Normalized events are Yoke's provider-neutral records for activity that happens during a run or streamed session turn. The `Event` model can represent text, tool use, tool results, request events, usage, provider session ids, warnings, errors, hooks, goals, rate limits, and unknown stream activity while preserving raw provider data [@models]. This gives a [Yoke Harness](yoke-harness) one event language even when Claude and Codex emit different native message shapes.
@@ -53,3 +62,7 @@ Normalized events are not a lossy replacement for provider protocols. Unknown Co
 ## Use in runs and storage
 
 Runs carry normalized events directly, and streamed sessions yield normalized events one at a time [@models]. This is the bridge between live provider activity and later inspection of a run result.
+
+Embedding applications can also receive run events through `RunOptions(on_event=...)`. The README defines `on_event` as a synchronous callback that receives each normalized event once during a one-shot run [@readme]. The option is runtime-only: `RunOptions` excludes the callback from serialization and reports it as an SDK-only runtime option because a Python callable cannot round-trip through agent folders [@options].
+
+The callback is a surface-planned feature, not a universal provider promise. `RunOptions.features()` declares `run_event_callbacks` when `on_event` is present, and capability tests show automatic Codex planning selects the Codex app-server surface while explicit Codex CLI or Codex Python SDK surfaces reject the run before execution [@options] [@capability-tests]. Use `harness.stream(...)` when the caller needs a portable event iterator instead of a live callback [@readme].
