@@ -1,15 +1,15 @@
+# Yoke
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/AlmanacCode/Yoke/main/docs/assets/definition.png" alt="yoke (yōk), n. A harness that joins two, that they may pull as one. [akin to Skr. yoga, union.]" width="82%" />
+</p>
+
 <p align="center">
   <a href="https://www.python.org/"><img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white"></a>
   <a href="https://peps.python.org/pep-0561/"><img alt="Typed" src="https://img.shields.io/badge/typed-py.typed-2b5b84"></a>
   <a href="https://claude.com/claude-code"><img alt="Claude harness" src="https://img.shields.io/badge/harness-Claude-D97757?logo=anthropic&logoColor=white"></a>
   <a href="https://openai.com/codex/"><img alt="Codex harness" src="https://img.shields.io/badge/harness-Codex-4B68F9?logo=openai&logoColor=white"></a>
   <a href="https://github.com/AlmanacCode/Yoke/blob/main/LICENSE.md"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-df7b40"></a>
-</p>
-
-# Yoke
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/AlmanacCode/Yoke/main/docs/assets/definition.png" alt="yoke (yōk), n. A harness that joins two, that they may pull as one. [akin to Skr. yoga, union.]" width="82%" />
 </p>
 
 **A Python SDK for building agents on Claude Code and Codex.**
