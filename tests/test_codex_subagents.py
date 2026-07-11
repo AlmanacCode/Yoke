@@ -56,14 +56,14 @@ def test_codex_app_server_developer_instructions_compile_subagents() -> None:
 
     assert instructions is not None
     assert "You are the app-server root agent." in instructions
-    assert "Available Yoke subagents follow." in instructions
-    assert "real delegated agents" in instructions
-    assert "native `spawn_agent` tool" in instructions
-    assert "Never claim a subagent ran unless a spawn succeeded." in instructions
+    assert "Available native Codex subagents follow." in instructions
+    assert "exact `agent_type`" in instructions
+    assert "Never simulate these roles" in instructions
     assert "## researcher" in instructions
     assert "Description: Research provider behavior." in instructions
-    assert "Spawn overrides: model=gpt-5.4-mini" in instructions
-    assert "Child task instructions:\nPrefer primary sources." in instructions
+    assert 'spawn_agent(agent_type="researcher", fork_turns="none")' in instructions
+    assert "Prefer primary sources." not in instructions
+    assert "gpt-5.4-mini" not in instructions
 
 
 def test_codex_custom_agent_files_compile_direct_subagents() -> None:

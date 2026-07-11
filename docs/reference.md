@@ -543,8 +543,8 @@ Yoke preserves native skill behavior when the provider surface supports it.
 
 | Surface | Packaged folder skills | Inline text skills |
 | --- | --- | --- |
-| Claude Python SDK | local Claude plugin root | prompt-compiled |
-| Codex app-server | `skills/extraRoots/set` | prompt-compiled |
+| Claude Python SDK | local Claude plugin root | derived local plugin skill |
+| Codex app-server | `skills/extraRoots/set` | derived native skill root |
 | Codex CLI | prompt-compiled | prompt-compiled |
 
 Native skills can bring supporting files and provider UI affordances. Compiled
@@ -590,7 +590,7 @@ Provider behavior is intentionally different:
 | --- | --- |
 | Claude Python SDK | mapped to Claude `AgentDefinition` |
 | Codex CLI | compiled into prompt instructions |
-| Codex app-server | compiled into developer instructions |
+| Codex app-server | derived custom-agent TOML selected by `agent_type` |
 
 Codex app-server also has native collaboration-agent tool activity such as
 `spawnAgent`, `sendInput`, `wait`, and `closeAgent`. Yoke exposes that as
@@ -614,6 +614,23 @@ print(status.subagents.agent_tool, status.subagents.events)
 they become instructions or artifacts. `provider_native` means the provider
 surface can expose live spawned-agent activity, which is separate from the
 Yoke-declared subagent map.
+
+### Runtime deployments
+
+For Claude SDK and Codex app-server, Yoke derives provider-native runtime files
+under an isolated temporary directory outside `Harness.cwd`. Configure its
+parent with `Harness(runtime_root=Path(...))`; Yoke removes each deployment on
+close or error. Root and child skills retain separate ownership.
+
+Codex roles use `spawn_agent(agent_type=..., fork_turns="none")` (or a partial
+turn count), because a full fork cannot change role/model metadata. If the
+selected model/backend rejects the named-agent schema, the run fails rather
+than falling back to a generic child. Use `agent.bundle(...).write(...)` only
+when you intentionally want durable project files; `runtime_root` is a cache,
+not another authored configuration source. Existing Codex skill configuration
+is preserved; for a path managed by the active Yoke deployment, Yoke's runtime
+enablement flag takes precedence so parent and child skill ownership remains
+enforced.
 
 ## Sessions
 

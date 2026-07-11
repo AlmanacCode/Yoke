@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
@@ -63,7 +64,7 @@ from yoke.providers.codex_app.policy import (
 from yoke.providers.codex_app.process import JsonRpcLineProcess
 from yoke.providers.codex_app.prompts import developer_instructions
 from yoke.providers.codex_app.rpc import request_rpc
-from yoke.providers.codex_app.skills import native_skill_roots
+from yoke.providers.runtime_deployment import RuntimeDeployment, deploy_runtime
 from yoke.readiness import run_command
 from yoke.structured import OutputSchema, parse_output, provider_schema
 from yoke.surfaces import capabilities_for
@@ -101,6 +102,7 @@ class CodexAppServer:
         self.env = env
         self._threads: dict[str, AppServerThread] = {}
         self._process_refs: dict[int, int] = {}
+        self._deployments: dict[int, RuntimeDeployment] = {}
 
     async def run(self, harness: Harness, prompt: str, options: RunOptions) -> Run:
         session = await self.start(
@@ -320,13 +322,28 @@ class CodexAppServer:
         permissions = (
             options.permissions or harness.permissions or harness.agent.permissions
         )
-        process = await asyncio.to_thread(
-            self._start_process,
-            harness.cwd,
-            harness.environment,
+        deployment = deploy_runtime(
+            harness.agent,
+            Provider.CODEX,
+            harness.runtime_root,
         )
+        runtime_config = codex_runtime_config(deployment)
         goal = options.resolve_goal(harness.agent.goal)
         try:
+            if runtime_config:
+                process = await asyncio.to_thread(
+                    self._start_process,
+                    harness.cwd,
+                    harness.environment,
+                    runtime_config,
+                )
+            else:
+                process = await asyncio.to_thread(
+                    self._start_process,
+                    harness.cwd,
+                    harness.environment,
+                )
+            self._deployments[id(process)] = deployment
             thread = await asyncio.to_thread(
                 self._start_thread,
                 process,
@@ -336,7 +353,10 @@ class CodexAppServer:
                 goal,
             )
         except Exception:
-            process.terminate()
+            if "process" in locals():
+                process.terminate()
+                self._deployments.pop(id(process), None)
+            deployment.cleanup()
             raise
         self._threads[thread.thread_id] = thread
         self._retain_process(process)
@@ -350,9 +370,15 @@ class CodexAppServer:
             permissions=permissions,
             goal=None,
             model=options.model or harness.agent.model,
+            runtime_root=harness.runtime_root,
         )
         if goal is not None:
-            session = await self.set_goal(session, goal)
+            try:
+                session = await self.set_goal(session, goal)
+            except Exception:
+                self._threads.pop(thread.thread_id, None)
+                await asyncio.to_thread(self._release_process, process)
+                raise
         return session
 
     async def send(self, session: Session, turn: Turn, options: RunOptions) -> Run:
@@ -448,6 +474,7 @@ class CodexAppServer:
             permissions=session.permissions or source.permissions,
             goal=session.goal,
             model=session.model,
+            runtime_root=session.runtime_root,
         )
 
     async def close(self, session: Session) -> None:
@@ -528,9 +555,11 @@ class CodexAppServer:
         self,
         cwd: Path,
         environment: dict[str, str] | None = None,
+        runtime_config: dict[str, Any] | None = None,
     ) -> JsonRpcLineProcess:
         args = ["app-server"]
-        for override in config_overrides(self.config):
+        config = merged_runtime_config(self.config, runtime_config or {})
+        for override in config_overrides(config):
             args.extend(["--config", override])
         args.extend(["--listen", "stdio://"])
         return JsonRpcLineProcess.start(
@@ -572,6 +601,7 @@ class CodexAppServer:
             ),
             provider_options,
             options.model or harness.agent.model,
+            self._deployments.get(id(process)),
         )
         if options.resume:
             params["threadId"] = options.resume
@@ -651,6 +681,9 @@ class CodexAppServer:
         if count <= 1:
             self._process_refs.pop(key, None)
             process.terminate()
+            deployment = self._deployments.pop(key, None)
+            if deployment is not None:
+                deployment.cleanup()
             return
         self._process_refs[key] = count - 1
 
@@ -769,7 +802,8 @@ class CodexAppServer:
         process: JsonRpcLineProcess,
         harness: Harness,
     ) -> None:
-        skill_roots = native_skill_roots(harness.agent)
+        deployment = self._deployments.get(id(process))
+        skill_roots = list(deployment.codex_skill_roots if deployment else ())
         if skill_roots:
             request_rpc(
                 process,
@@ -952,6 +986,78 @@ def config_overrides(config: dict[str, Any]) -> list[str]:
     return overrides
 
 
+def codex_runtime_config(deployment: RuntimeDeployment) -> dict[str, Any]:
+    """Return the config that activates a runtime's native named agents."""
+
+    config: dict[str, Any] = {}
+    if deployment.codex_agents:
+        config["agents"] = deployment.codex_agents
+        config["features"] = {
+            "multi_agent_v2": {
+                "enabled": True,
+                "hide_spawn_agent_metadata": False,
+            }
+        }
+    if deployment.codex_parent_skill_settings:
+        config["skills"] = {
+            "config": [
+                {"path": str(path), "enabled": enabled}
+                for path, enabled in deployment.codex_parent_skill_settings
+            ]
+        }
+    return config
+
+
+def merged_config(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Deep-merge runtime configuration without mutating adapter defaults."""
+
+    merged: dict[str, Any] = dict(base)
+    for key, value in override.items():
+        current = merged.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            merged[key] = merged_config(current, value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def merged_runtime_config(
+    base: dict[str, Any],
+    runtime: dict[str, Any],
+) -> dict[str, Any]:
+    """Merge runtime policy while preserving unrelated authored skill entries."""
+
+    merged = merged_config(base, runtime)
+    base_skills = skill_config_entries(base)
+    runtime_skills = skill_config_entries(runtime)
+    if not runtime_skills:
+        return merged
+    runtime_paths = {
+        item.get("path") for item in runtime_skills if isinstance(item.get("path"), str)
+    }
+    combined = [
+        item
+        for item in base_skills
+        if not isinstance(item.get("path"), str)
+        or item.get("path") not in runtime_paths
+    ]
+    combined.extend(runtime_skills)
+    skills = dict(merged.get("skills", {}))
+    skills["config"] = combined
+    merged["skills"] = skills
+    return merged
+
+
+def skill_config_entries(config: dict[str, Any]) -> list[dict[str, Any]]:
+    skills = config.get("skills")
+    if not isinstance(skills, dict):
+        return []
+    entries = skills.get("config")
+    if not isinstance(entries, list):
+        return []
+    return [dict(item) for item in entries if isinstance(item, dict)]
+
+
 def flatten_config(value: Any, prefix: str, overrides: list[str]) -> None:
     if isinstance(value, dict):
         for key, child in value.items():
@@ -960,7 +1066,32 @@ def flatten_config(value: Any, prefix: str, overrides: list[str]) -> None:
         return
     if not prefix:
         raise ValueError("Codex app-server config overrides must be keyed")
-    overrides.append(f"{prefix}={json.dumps(value)}")
+    overrides.append(f"{prefix}={toml_config_value(value)}")
+
+
+def toml_config_value(value: Any) -> str:
+    """Encode one `--config key=value` value using TOML syntax."""
+
+    if isinstance(value, str):
+        return json.dumps(value)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int | float):
+        return str(value)
+    if isinstance(value, list | tuple):
+        return "[" + ", ".join(toml_config_value(item) for item in value) + "]"
+    if isinstance(value, dict):
+        fields = ", ".join(
+            f"{toml_config_key(key)} = {toml_config_value(child)}"
+            for key, child in value.items()
+        )
+        return "{ " + fields + " }"
+    raise ValueError(f"unsupported Codex app-server config value: {value!r}")
+
+
+def toml_config_key(value: object) -> str:
+    text = str(value)
+    return text if re.fullmatch(r"[A-Za-z0-9_-]+", text) else json.dumps(text)
 
 
 def thread_params(
@@ -970,13 +1101,20 @@ def thread_params(
     ephemeral: bool,
     provider_options: CodexOptions | dict[str, Any] | None = None,
     model: str | None = None,
+    deployment: RuntimeDeployment | None = None,
 ) -> dict[str, Any]:
     permission_profile = codex_app_server_option(provider_options, "permissions")
     params: dict[str, Any] = {
         "cwd": str(harness.cwd),
         "model": model or harness.agent.model,
         "approvalPolicy": approval_policy(permissions, provider_options),
-        "developerInstructions": developer_instructions(harness.agent),
+        "developerInstructions": developer_instructions(
+            harness.agent,
+            role_names=deployment.codex_role_names if deployment else None,
+            inline_skills_native=bool(
+                deployment and deployment.generated_skill_root
+            ),
+        ),
         "ephemeral": ephemeral if goal is None else False,
     }
     if permission_profile is not None:

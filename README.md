@@ -138,11 +138,15 @@ agent = Agent(
 ```
 
 A subagent is just another `Agent`. Claude runs declared subagents through its
-native Agent tool. Codex app-server compiles the declaration into explicit
-guidance to use native `spawn_agent`, including requested model overrides, and
-normalizes collaboration events when the parent follows that guidance. This is
-model-driven orchestration, not deterministic tool enforcement. Codex SDK/CLI
-surfaces use clearly labeled compiled instructions or provider files.
+native Agent tool. Codex app-server derives temporary custom-agent TOML and the
+parent selects it with `spawn_agent(agent_type=..., fork_turns="none")`. Yoke
+does not silently use a generic child: an incompatible Codex model/backend
+fails honestly. Codex SDK/CLI surfaces retain their documented lowerings.
+
+Runtime files are derived outside `cwd` and removed when the session closes.
+Set `Harness(runtime_root=...)` to choose their parent cache directory. This is
+different from `agent.bundle(...).write(...)`, which explicitly exports durable
+provider files for a project.
 
 ## Workflows
 

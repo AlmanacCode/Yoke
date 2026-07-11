@@ -65,6 +65,7 @@ from yoke.providers.claude_plugins import (
     plugin_paths,
     plugin_root_for_skill,
 )
+from yoke.providers.runtime_deployment import RuntimeDeployment, deploy_runtime
 from yoke.readiness import run_command
 from yoke.structured import OutputSchema, provider_schema
 from yoke.surfaces import capabilities_for
@@ -80,6 +81,7 @@ class ClaudeEventState:
     """Correlation state for provider events that split tool use from result."""
 
     agent_tools: dict[str, AgentCall] = field(default_factory=dict)
+    active_tasks: set[str] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -210,17 +212,33 @@ class Claude:
         except ImportError as exc:
             raise YokeError(f"Claude support requires `{CLAUDE_INSTALL}`.") from exc
 
-        sdk_options = claude_options(harness, options, env_overrides=self.env)
-        messages = query(prompt=claude_prompt(prompt, sdk_options), options=sdk_options)
-        return await collect_messages(
-            self.provider,
-            messages,
-            surface=self.surface,
-            output_schema=options.output_schema,
-            requested_model=options.model or harness.agent.model,
-            on_event=options.on_event,
-            timeout_seconds=options.timeout_seconds,
+        deployment = deploy_runtime(
+            harness.agent,
+            Provider.CLAUDE,
+            harness.runtime_root,
         )
+        try:
+            sdk_options = claude_options(
+                harness,
+                options,
+                env_overrides=self.env,
+                deployment=deployment,
+            )
+            messages = query(
+                prompt=claude_prompt(prompt, sdk_options),
+                options=sdk_options,
+            )
+            return await collect_messages(
+                self.provider,
+                messages,
+                surface=self.surface,
+                output_schema=options.output_schema,
+                requested_model=options.model or harness.agent.model,
+                on_event=options.on_event,
+                timeout_seconds=options.timeout_seconds,
+            )
+        finally:
+            deployment.cleanup()
 
     async def models(self, harness: Harness):
         raise UnsupportedFeature("Claude model listing is not implemented in Yoke yet.")
@@ -253,21 +271,35 @@ class Claude:
         except ImportError as exc:
             raise YokeError(f"Claude support requires `{CLAUDE_INSTALL}`.") from exc
 
-        messages = query(
-            prompt=f"/goal {options.goal.objective}",
-            options=claude_options(
-                harness,
-                RunOptions(goal=None, inherit_goal=False),
-                env_overrides=self.env,
-            ),
+        deployment = deploy_runtime(
+            harness.agent,
+            Provider.CLAUDE,
+            harness.runtime_root,
         )
-        run = await collect_messages(self.provider, messages, surface=self.surface)
+        try:
+            messages = query(
+                prompt=f"/goal {options.goal.objective}",
+                options=claude_options(
+                    harness,
+                    RunOptions(goal=None, inherit_goal=False),
+                    env_overrides=self.env,
+                    deployment=deployment,
+                ),
+            )
+            run = await collect_messages(
+                self.provider,
+                messages,
+                surface=self.surface,
+            )
+        finally:
+            deployment.cleanup()
         session = run.session or Session(
             provider=self.provider,
             surface=self.surface,
             id=str(uuid4()),
             agent=harness.agent,
             cwd=harness.cwd,
+            runtime_root=harness.runtime_root,
         )
         return GoalRun(
             provider=self.provider,
@@ -421,19 +453,30 @@ class Claude:
             permissions=options.permissions,
             provider=options.provider,
         )
-        sdk_options = claude_options(
-            harness,
-            run_options,
-            resume=options.resume,
-            env_overrides=self.env,
+        deployment = deploy_runtime(
+            harness.agent,
+            Provider.CLAUDE,
+            harness.runtime_root,
         )
-        client = ClaudeSDKClient(options=sdk_options)
-        await client.connect()
-        session_id = options.resume or str(uuid4())
+        try:
+            sdk_options = claude_options(
+                harness,
+                run_options,
+                resume=options.resume,
+                env_overrides=self.env,
+                deployment=deployment,
+            )
+            client = ClaudeSDKClient(options=sdk_options)
+            await client.connect()
+        except Exception:
+            deployment.cleanup()
+            raise
+        session_id = str(uuid4())
         self._sessions[session_id] = ClaudeSession(
             client=client,
             options=sdk_options,
             provider_session_id=options.resume,
+            deployment=deployment,
         )
         permissions = (
             options.permissions or harness.permissions or harness.agent.permissions
@@ -448,6 +491,7 @@ class Claude:
             permissions=permissions,
             goal=options.resolve_goal(harness.agent.goal),
             model=options.model or harness.agent.model,
+            runtime_root=harness.runtime_root,
             credentials=harness.credentials,
         )
 
@@ -461,12 +505,13 @@ class Claude:
         )
         run = await collect_messages(
             self.provider,
-            live.client.receive_response(),
+            live.client.receive_messages(),
             session,
             output_schema=options.output_schema,
             requested_model=session.model,
             on_event=options.on_event,
             timeout_seconds=options.timeout_seconds,
+            stop_when_settled=True,
         )
         live.provider_session_id = (
             run.session.provider_session_id if run.session else live.provider_session_id
@@ -488,7 +533,8 @@ class Claude:
         )
         text: list[str] = []
         event_state = ClaudeEventState()
-        async for message in live.client.receive_response():
+        async for message in live.client.receive_messages():
+            observe_claude_task(message, event_state)
             events = claude_events(message, event_state)
             if type(message).__name__ == "ResultMessage":
                 events = deduplicate_result_text(events, text)
@@ -498,6 +544,11 @@ class Claude:
                 if event.kind == EventKind.TEXT and event.message is not None:
                     text.append(event.message)
                 yield event.model_copy(update={"surface": self.surface})
+            if (
+                type(message).__name__ == "ResultMessage"
+                and not event_state.active_tasks
+            ):
+                return
 
     async def get_goal(self, session: Session) -> Goal | None:
         raise UnsupportedFeature("Claude does not expose native readable goals.")
@@ -546,6 +597,7 @@ class Claude:
             agent=session.agent,
             cwd=session.cwd,
             permissions=session.permissions,
+            runtime_root=session.runtime_root,
             credentials=session.credentials,
         )
         run_options = RunOptions(
@@ -553,16 +605,35 @@ class Claude:
             inherit_goal=False,
             permissions=session.permissions,
         )
-        sdk_options = claude_options(
-            harness,
-            run_options,
-            resume=source_provider_id,
-            fork_session=True,
-            env_overrides=self.env,
+        runtime_parent = (
+            live.deployment.root.parent
+            if live is not None and live.deployment is not None
+            else session.runtime_root
         )
-        client = ClaudeSDKClient(options=sdk_options)
-        await client.connect()
-        self._sessions[fork_id] = ClaudeSession(client=client, options=sdk_options)
+        deployment = deploy_runtime(
+            session.agent,
+            Provider.CLAUDE,
+            runtime_parent,
+        )
+        try:
+            sdk_options = claude_options(
+                harness,
+                run_options,
+                resume=source_provider_id,
+                fork_session=True,
+                env_overrides=self.env,
+                deployment=deployment,
+            )
+            client = ClaudeSDKClient(options=sdk_options)
+            await client.connect()
+        except Exception:
+            deployment.cleanup()
+            raise
+        self._sessions[fork_id] = ClaudeSession(
+            client=client,
+            options=sdk_options,
+            deployment=deployment,
+        )
         return Session(
             provider=self.provider,
             surface=self.surface,
@@ -572,12 +643,17 @@ class Claude:
             cwd=session.cwd,
             permissions=session.permissions,
             goal=session.goal,
+            runtime_root=session.runtime_root,
         )
 
     async def close(self, session: Session) -> None:
         live = self._sessions.pop(session.id, None)
         if live is not None:
-            await live.client.disconnect()
+            try:
+                await live.client.disconnect()
+            finally:
+                if live.deployment is not None:
+                    live.deployment.cleanup()
 
 
 @dataclass(slots=True)
@@ -587,6 +663,7 @@ class ClaudeSession:
     client: Any
     options: Any
     provider_session_id: str | None = None
+    deployment: RuntimeDeployment | None = None
 
 
 def claude_prompt(prompt: str, options: Any) -> str | AsyncIterator[dict[str, Any]]:
@@ -620,6 +697,7 @@ def claude_options(
     resume: str | None = None,
     fork_session: bool = False,
     env_overrides: dict[str, str] | None = None,
+    deployment: RuntimeDeployment | None = None,
 ):
     try:
         from claude_agent_sdk import AgentDefinition as ClaudeAgentDefinition
@@ -629,11 +707,15 @@ def claude_options(
 
     agent = harness.agent
     goal = options.resolve_goal(agent.goal)
-    plugins = claude_plugins(agent)
-    skills = skill_names(agent)
+    plugins = claude_plugins(agent, deployment)
+    skills = skill_names(agent, deployment)
     skill_filter = skills or ("all" if plugins else None)
     kwargs: dict[str, Any] = {
-        "system_prompt": system_prompt(agent, goal),
+        "system_prompt": system_prompt(
+            agent,
+            goal,
+            compile_inline=deployment is None,
+        ),
         "cwd": str(harness.cwd),
         "model": options.model or agent.model,
         "effort": options.effort or agent.effort,
@@ -660,7 +742,12 @@ def claude_options(
             options.permissions or harness.permissions,
             options.provider,
         ),
-        "agents": claude_agents(agent, options.provider, ClaudeAgentDefinition),
+        "agents": claude_agents(
+            agent,
+            options.provider,
+            ClaudeAgentDefinition,
+            deployment,
+        ),
         "plugins": plugins or [],
         "skills": skill_filter,
         "output_format": output_format(provider_schema(options.output_schema)),
@@ -693,12 +780,19 @@ def credential_env(
     return env
 
 
-def claude_agents(agent: Agent, provider: Any | None, definition: Any):
+def claude_agents(
+    agent: Agent,
+    provider: Any | None,
+    definition: Any,
+    deployment: RuntimeDeployment | None = None,
+):
     """Return Claude AgentDefinition map for Yoke subagents."""
 
     overrides = claude_agent_overrides(provider)
     agents = {
-        name: definition(**claude_agent_kwargs(name, subagent, overrides.get(name)))
+        name: definition(
+            **claude_agent_kwargs(name, subagent, overrides.get(name), deployment)
+        )
         for name, subagent in agent.subagents.items()
     }
     return agents or None
@@ -708,8 +802,9 @@ def claude_agent_kwargs(
     name: str,
     subagent: Agent,
     override: ClaudeAgentOptions | dict[str, Any] | None,
+    deployment: RuntimeDeployment | None = None,
 ) -> dict[str, Any]:
-    skills = skill_names(subagent)
+    skills = skill_names(subagent, deployment)
     kwargs: dict[str, Any] = {
         "description": subagent.description or name,
         "prompt": subagent.instructions or subagent.description or name,
@@ -1037,9 +1132,11 @@ async def collect_messages(
     requested_model: str | None = None,
     on_event: Callable[[Event], None] | None = None,
     timeout_seconds: float | None = None,
+    stop_when_settled: bool = False,
 ) -> Run:
     events: list[Event] = []
-    text: list[str] = []
+    current_text: list[str] = []
+    completed_text: list[str] = []
     fallback_result: str | None = None
     data: Any | None = None
     usage: Usage | None = None
@@ -1053,9 +1150,10 @@ async def collect_messages(
                 code="timeout",
             )
             break
+        observe_claude_task(message, event_state)
         mapped = claude_events(message, event_state)
         if type(message).__name__ == "ResultMessage":
-            mapped = deduplicate_result_text(mapped, text)
+            mapped = deduplicate_result_text(mapped, current_text)
         if resolved_surface is not None:
             mapped = [
                 event.model_copy(update={"surface": resolved_surface})
@@ -1067,10 +1165,13 @@ async def collect_messages(
         events.extend(mapped)
         for event in mapped:
             if event.kind == "text" and event.message is not None:
-                text.append(event.message)
+                current_text.append(event.message)
             if event.usage is not None:
                 usage = event.usage
         if type(message).__name__ == "ResultMessage":
+            data = None
+            failure = None
+            fallback_result = None
             structured_output = getattr(message, "structured_output", None)
             result_text = getattr(message, "result", None)
             if structured_output is not None:
@@ -1095,11 +1196,16 @@ async def collect_messages(
             terminal_failure = claude_result_failure(message)
             if terminal_failure is not None:
                 failure = terminal_failure
+            completed_text = list(current_text)
+            current_text.clear()
+            if not event_state.active_tasks and stop_when_settled:
+                break
     resolved_session = session_with_provider_id(session, events)
+    output_text = completed_text or current_text
     return Run(
         provider=provider,
         surface=surface or (session.surface if session else None),
-        output=("\n".join(text).strip() or fallback_result),
+        output=("\n".join(output_text).strip() or fallback_result),
         data=data,
         events=tuple(events),
         session=resolved_session,
@@ -1144,10 +1250,11 @@ def is_terminal_text_copy(message: str, prior_text: list[str]) -> bool:
 
     if not prior_text:
         return False
-    return message in {
-        prior_text[-1],
-        "".join(prior_text),
-        "\n".join(prior_text),
+    normalized = message.strip()
+    return normalized in {
+        prior_text[-1].strip(),
+        "".join(prior_text).strip(),
+        "\n".join(prior_text).strip(),
     }
 
 
@@ -1191,6 +1298,29 @@ def session_with_provider_id(
     if provider_session_id == session.provider_session_id:
         return session
     return session.model_copy(update={"provider_session_id": provider_session_id})
+
+
+def observe_claude_task(message: Any, state: ClaudeEventState) -> None:
+    """Track provider-native background work for response termination."""
+
+    name = type(message).__name__
+    task_id = getattr(message, "task_id", None)
+    if not isinstance(task_id, str) or not task_id:
+        return
+    if name == "TaskStartedMessage":
+        state.active_tasks.add(task_id)
+        return
+    if name == "TaskNotificationMessage":
+        state.active_tasks.discard(task_id)
+        return
+    if name != "TaskUpdatedMessage":
+        return
+    status = getattr(message, "status", None)
+    patch = getattr(message, "patch", None)
+    if status is None and isinstance(patch, dict):
+        status = patch.get("status")
+    if status in {"completed", "failed", "stopped", "killed"}:
+        state.active_tasks.discard(task_id)
 
 
 def claude_events(
@@ -2059,11 +2189,16 @@ def first_text(*values: Any) -> str | None:
     return None
 
 
-def system_prompt(agent: Agent, goal: Goal | None) -> str | None:
+def system_prompt(
+    agent: Agent,
+    goal: Goal | None,
+    *,
+    compile_inline: bool = True,
+) -> str | None:
     parts: list[str] = []
     if agent.instructions:
         parts.append(agent.instructions)
-    skill_text = compiled_skills(agent)
+    skill_text = compiled_skills(agent) if compile_inline else None
     if skill_text:
         parts.append(skill_text)
     if goal:
@@ -2378,7 +2513,10 @@ def claude_session_message(session_id: str, message: Any) -> SessionMessage:
     )
 
 
-def skill_names(agent: Agent) -> list[str]:
+def skill_names(
+    agent: Agent,
+    deployment: RuntimeDeployment | None = None,
+) -> list[str]:
     names: list[str] = []
     for skill in agent.skills:
         name = skill.name or (skill.path.stem if skill.path else None)
@@ -2387,13 +2525,23 @@ def skill_names(agent: Agent) -> list[str]:
         root = plugin_root_for_skill(skill.path)
         if root is not None:
             names.append(f"{root.expanduser().resolve().name}:{name}")
+        elif deployment is not None and skill.instructions is not None:
+            names.append(f"{deployment.claude_plugin_name}:{name}")
         else:
             names.append(name)
     return names
 
 
-def claude_plugins(agent: Agent) -> list[dict[str, str]]:
-    return [
+def claude_plugins(
+    agent: Agent,
+    deployment: RuntimeDeployment | None = None,
+) -> list[dict[str, str]]:
+    plugins = [
         {"type": "local", "path": str(path)}
         for path in plugin_paths(agent)
     ]
+    if deployment is not None and deployment.claude_plugin_root is not None:
+        plugins.append(
+            {"type": "local", "path": str(deployment.claude_plugin_root)}
+        )
+    return plugins

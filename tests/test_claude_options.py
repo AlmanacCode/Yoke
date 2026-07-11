@@ -31,10 +31,17 @@ from yoke import (
     Session,
     Skill,
     ToolKind,
+    Turn,
     register,
 )
 from yoke.errors import UnsupportedFeature, YokeError
-from yoke.providers.claude import Claude, claude_options, claude_prompt
+from yoke.providers.claude import (
+    Claude,
+    ClaudeSession,
+    claude_options,
+    claude_prompt,
+)
+from yoke.providers.runtime_deployment import deploy_runtime
 
 
 class StructuredDetail(BaseModel):
@@ -127,6 +134,69 @@ def test_claude_prompt_uses_async_iterable_when_permissions_callback_present() -
     ]
 
 
+@pytest.mark.asyncio
+async def test_claude_live_send_and_stream_use_continuous_task_lifecycle() -> None:
+    class TaskStartedMessage:
+        task_id = "task-1"
+        description = "Review"
+        task_type = "local_agent"
+
+    class TaskNotificationMessage:
+        task_id = "task-1"
+        status = "completed"
+        output_file = "/tmp/review.md"
+        summary = "done"
+
+    class ResultMessage:
+        structured_output = None
+        is_error = False
+        subtype = "success"
+
+        def __init__(self, result: str) -> None:
+            self.result = result
+
+    class Client:
+        async def query(self, *_args, **_kwargs):
+            return None
+
+        async def receive_messages(self):
+            yield TaskStartedMessage()
+            yield ResultMessage("intermediate")
+            yield TaskNotificationMessage()
+            yield ResultMessage("final")
+            raise AssertionError("read beyond final result")
+
+    adapter = Claude()
+    session = Session(
+        provider="claude",
+        surface="claude_python_sdk",
+        id="local",
+        agent=Agent(instructions="test"),
+        cwd=Path.cwd(),
+    )
+    adapter._sessions[session.id] = ClaudeSession(
+        client=Client(),
+        options=SimpleNamespace(),
+    )
+
+    run = await adapter.send(session, Turn(prompt="review"), RunOptions())
+    assert run.output == "final"
+
+    adapter._sessions[session.id] = ClaudeSession(
+        client=Client(),
+        options=SimpleNamespace(),
+    )
+    events = [
+        event
+        async for event in adapter.stream(
+            session,
+            Turn(prompt="review"),
+            RunOptions(),
+        )
+    ]
+    assert any(event.message == "done" for event in events)
+
+
 def test_claude_run_options_model_overrides_agent_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -194,8 +264,50 @@ def test_claude_path_skills_are_passed_as_explicit_plugin_skill_names(
     assert "Skill" in options.kwargs["tools"]
 
 
+def test_claude_inline_skills_are_native_and_agents_stay_direct(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = fake_claude_agent_sdk()
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", module)
+    agent = Agent(
+        instructions="parent",
+        skills=(Skill.from_text("SKILL_SECRET", name="review-check"),),
+        subagents={
+            "reviewer": Agent(
+                description="Review changes.",
+                instructions="SUBAGENT_SECRET",
+                model="sonnet",
+            )
+        },
+    )
+    harness = Harness(provider="claude", agent=agent, cwd=tmp_path)
+    deployment = deploy_runtime(agent, "claude", tmp_path)
+    try:
+        options = claude_options(
+            harness,
+            RunOptions(),
+            deployment=deployment,
+        )
+
+        assert options.kwargs["plugins"] == [
+            {"type": "local", "path": str(deployment.claude_plugin_root)}
+        ]
+        assert options.kwargs["skills"] == [
+            f"{deployment.claude_plugin_name}:review-check"
+        ]
+        assert "SKILL_SECRET" not in options.kwargs["system_prompt"]
+        assert options.kwargs["agents"]["reviewer"].kwargs["prompt"] == (
+            "SUBAGENT_SECRET"
+        )
+        assert not (deployment.root / "plugin" / "agents").exists()
+    finally:
+        deployment.cleanup()
+
+
 def test_claude_goal_loop_uses_slash_goal_through_sdk(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     module = fake_claude_agent_sdk()
     seen = {}
@@ -207,6 +319,8 @@ def test_claude_goal_loop_uses_slash_goal_through_sdk(
     async def fake_query(prompt, options):
         seen["prompt"] = prompt
         seen["options"] = options
+        seen["plugin"] = Path(options.kwargs["plugins"][0]["path"])
+        assert seen["plugin"].exists()
         yield ResultMessage()
 
     module.query = fake_query
@@ -215,17 +329,59 @@ def test_claude_goal_loop_uses_slash_goal_through_sdk(
     harness = Harness(
         provider="claude",
         surface="claude_python_sdk",
-        agent=Agent(instructions="test", model="agent-model"),
-        cwd=Path.cwd(),
+        agent=Agent(
+            instructions="test",
+            model="agent-model",
+            skills=(Skill.from_text("GOAL_SKILL_SECRET", name="goal-skill"),),
+        ),
+        cwd=tmp_path / "workspace",
+        runtime_root=tmp_path / "runtime",
     )
 
     result = asyncio.run(Claude().goal_loop(harness, GoalLoopOptions(goal=goal)))
 
     assert seen["prompt"] == "/goal Finish the implementation safely."
     assert seen["options"].kwargs["model"] == "agent-model"
+    assert "GOAL_SKILL_SECRET" not in seen["options"].kwargs["system_prompt"]
+    assert not seen["plugin"].exists()
     assert result.ok
     assert result.goal == goal
     assert result.session.goal == goal
+
+
+def test_claude_goal_loop_cleans_native_deployment_on_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = fake_claude_agent_sdk()
+    seen: dict[str, Path] = {}
+
+    async def failing_query(prompt, options):
+        seen["plugin"] = Path(options.kwargs["plugins"][0]["path"])
+        assert seen["plugin"].exists()
+        raise RuntimeError("goal failed")
+        yield  # pragma: no cover
+
+    module.query = failing_query
+    monkeypatch.setitem(sys.modules, "claude_agent_sdk", module)
+    harness = Harness(
+        provider="claude",
+        agent=Agent(
+            instructions="test",
+            skills=(Skill.from_text("native", name="goal-skill"),),
+        ),
+        cwd=tmp_path / "workspace",
+        runtime_root=tmp_path / "runtime",
+    )
+
+    with pytest.raises(RuntimeError, match="goal failed"):
+        asyncio.run(
+            Claude().goal_loop(
+                harness,
+                GoalLoopOptions(goal=Goal("Finish.")),
+            )
+        )
+    assert not seen["plugin"].exists()
 
 
 def test_claude_provider_permission_options_reach_sdk_options(

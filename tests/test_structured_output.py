@@ -314,6 +314,182 @@ def test_claude_collect_messages_deduplicates_final_result_text() -> None:
     assert result.output == "finished"
 
 
+def test_claude_waits_for_native_background_task_and_final_parent_result() -> None:
+    class TextBlock:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+    class AssistantMessage:
+        def __init__(self, text: str) -> None:
+            self.content = [TextBlock(text)]
+
+    class TaskStartedMessage:
+        task_id = "task-1"
+        description = "Review changes"
+        task_type = "local_agent"
+
+    class TaskNotificationMessage:
+        task_id = "task-1"
+        status = "completed"
+        output_file = "/tmp/task.md"
+        summary = "Review complete"
+
+    class ResultMessage:
+        structured_output = None
+        is_error = False
+        subtype = "success"
+
+        def __init__(self, result: str) -> None:
+            self.result = result
+
+    async def background_messages():
+        yield TaskStartedMessage()
+        yield AssistantMessage("I will relay the review.")
+        yield ResultMessage("I will relay the review.")
+        yield TaskNotificationMessage()
+        yield AssistantMessage("Final parent answer.")
+        yield ResultMessage("Final parent answer.")
+        raise AssertionError("collector read beyond the terminal parent result")
+
+    result = asyncio.run(
+        collect_messages(
+            "claude",
+            background_messages(),
+            stop_when_settled=True,
+        )
+    )
+
+    assert result.output == "Final parent answer."
+    assert any(event.message == "Review complete" for event in result.events)
+
+
+def test_claude_same_text_in_intermediate_and_final_phases_is_not_duplicated() -> None:
+    class TextBlock:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+    class AssistantMessage:
+        def __init__(self, text: str) -> None:
+            self.content = [TextBlock(text)]
+
+    class TaskStartedMessage:
+        task_id = "task-1"
+        description = "Check"
+        task_type = "local_agent"
+
+    class TaskUpdatedMessage:
+        task_id = "task-1"
+        status = "running"
+        patch = {"status": "running"}
+
+    class TaskNotificationMessage:
+        task_id = "task-1"
+        status = "completed"
+        output_file = "/tmp/task.md"
+        summary = "done"
+
+    class ResultMessage:
+        result = "CLAUDE_OK"
+        structured_output = None
+        is_error = False
+        subtype = "success"
+
+    async def repeated_phase_messages():
+        yield TaskStartedMessage()
+        yield AssistantMessage("CLAUDE_OK")
+        yield ResultMessage()
+        yield TaskUpdatedMessage()
+        yield TaskNotificationMessage()
+        yield AssistantMessage("CLAUDE_OK\n")
+        yield ResultMessage()
+
+    result = asyncio.run(
+        collect_messages(
+            "claude",
+            repeated_phase_messages(),
+            stop_when_settled=True,
+        )
+    )
+
+    assert result.output == "CLAUDE_OK"
+    assistant_text = [
+        event
+        for event in result.events
+        if event.kind == "text" and type(event.raw).__name__ == "AssistantMessage"
+    ]
+    assert len(assistant_text) == 2
+
+
+def test_claude_one_shot_collector_exhausts_provider_iterator() -> None:
+    class ResultMessage:
+        result = "done"
+        structured_output = None
+        is_error = False
+        subtype = "success"
+
+    exhausted: list[bool] = []
+
+    async def one_shot_messages():
+        yield ResultMessage()
+        exhausted.append(True)
+
+    result = asyncio.run(collect_messages("claude", one_shot_messages()))
+
+    assert result.output == "done"
+    assert exhausted == [True]
+
+
+def test_claude_one_shot_returns_only_last_completed_response_segment() -> None:
+    class TextBlock:
+        def __init__(self, text: str) -> None:
+            self.text = text
+
+    class AssistantMessage:
+        def __init__(self, text: str) -> None:
+            self.content = [TextBlock(text)]
+
+    class TaskStartedMessage:
+        task_id = "task-1"
+        description = "Review"
+        task_type = "local_agent"
+
+    class TaskNotificationMessage:
+        task_id = "task-1"
+        status = "completed"
+        output_file = "/tmp/review.md"
+        summary = "done"
+
+    class ResultMessage:
+        structured_output = None
+        is_error = False
+        subtype = "success"
+
+        def __init__(self, result: str) -> None:
+            self.result = result
+
+    exhausted: list[bool] = []
+
+    async def one_shot_background_messages():
+        yield TaskStartedMessage()
+        yield AssistantMessage("I've asked the reviewer.")
+        yield ResultMessage("I've asked the reviewer.")
+        yield TaskNotificationMessage()
+        yield AssistantMessage("ONESHOT_OK")
+        yield AssistantMessage("The reviewer returned successfully.")
+        yield ResultMessage("ONESHOT_OK\nThe reviewer returned successfully.")
+        exhausted.append(True)
+
+    result = asyncio.run(
+        collect_messages("claude", one_shot_background_messages())
+    )
+
+    assert result.output == "ONESHOT_OK\nThe reviewer returned successfully."
+    assert exhausted == [True]
+    assert any(
+        event.message == "I've asked the reviewer." for event in result.events
+    )
+
+
 def test_claude_collect_messages_delivers_each_returned_event_once() -> None:
     class TextBlock:
         text = "finished"

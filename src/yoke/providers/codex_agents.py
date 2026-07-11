@@ -113,7 +113,14 @@ def codex_agent_settings_toml(settings: CodexAgentSettings) -> str:
     return "\n".join(lines) + "\n"
 
 
-def codex_agent_toml(name: str, agent: Agent) -> str:
+def codex_agent_toml(
+    name: str,
+    agent: Agent,
+    *,
+    instructions: str | None = None,
+    skill_paths: tuple[Path, ...] = (),
+    skill_settings: tuple[tuple[Path, bool], ...] | None = None,
+) -> str:
     """Render one Codex custom-agent TOML document."""
 
     lines = [
@@ -133,7 +140,10 @@ def codex_agent_toml(name: str, agent: Agent) -> str:
     if nicknames:
         lines.append(f"nickname_candidates = {toml_array(nicknames)}")
 
-    lines.append(f"developer_instructions = {toml_multiline(instructions_for(agent))}")
+    lines.append(
+        "developer_instructions = "
+        f"{toml_multiline(instructions or instructions_for(agent))}"
+    )
 
     mcp_servers = option_mapping(agent, "mcp_servers")
     for server_name, config in mcp_servers.items():
@@ -142,11 +152,17 @@ def codex_agent_toml(name: str, agent: Agent) -> str:
         for key, value in config.items():
             lines.append(f"{key} = {toml_value(value)}")
 
-    for skill in path_skills(agent.skills):
+    settings = skill_settings
+    if settings is None:
+        settings = tuple((skill.path, True) for skill in path_skills(agent.skills))
+        settings += tuple((path, True) for path in skill_paths)
+    for path, enabled in settings:
+        if path is None:
+            continue
         lines.append("")
         lines.append("[[skills.config]]")
-        lines.append(f"path = {toml_string(str(skill.path))}")
-        lines.append("enabled = true")
+        lines.append(f"path = {toml_string(str(path))}")
+        lines.append(f"enabled = {'true' if enabled else 'false'}")
 
     return "\n".join(lines) + "\n"
 

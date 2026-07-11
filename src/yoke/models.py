@@ -410,7 +410,6 @@ class Readiness(YokeModel):
     def normalize_known_surface(cls, value: object) -> object:
         return normalize_surface(value)
 
-
 class Login(YokeModel):
     """Provider login flow result."""
 
@@ -1011,6 +1010,7 @@ class Harness(YokeModel):
         exclude=True,
         repr=False,
     )
+    runtime_root: Path | None = Field(default=None, exclude=True, repr=False)
     credentials: Credentials = Field(
         default_factory=Credentials.auto,
         exclude=True,
@@ -1041,6 +1041,21 @@ class Harness(YokeModel):
     @classmethod
     def normalize_known_surface(cls, value: object) -> object:
         return normalize_surface(value)
+
+    @model_validator(mode="after")
+    def keep_runtime_outside_working_directory(self) -> Harness:
+        """Reserve in-project files for explicit bundle export only."""
+
+        if self.runtime_root is None:
+            return self
+        cwd = self.cwd.expanduser().resolve()
+        runtime_root = self.runtime_root.expanduser().resolve()
+        if runtime_root == cwd or runtime_root.is_relative_to(cwd):
+            raise ValueError(
+                "runtime_root must be outside cwd; use agent.bundle(...).write(...) "
+                "for explicit project files"
+            )
+        return self
 
     def with_adapter(self, adapter: Any) -> Harness:
         """Register an adapter and return this harness.
@@ -1735,6 +1750,7 @@ class Session(YokeModel):
     permissions: Permissions | None = None
     goal: Goal | None = None
     model: str | None = None
+    runtime_root: Path | None = Field(default=None, exclude=True, repr=False)
     credentials: Credentials = Field(
         default_factory=Credentials.auto, exclude=True, repr=False
     )

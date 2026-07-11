@@ -25,6 +25,17 @@ def native_skill_roots(agent: Any) -> tuple[Path, ...]:
     return tuple(deduped.values())
 
 
+def direct_native_skill_roots(agent: Any) -> tuple[Path, ...]:
+    """Return only skill roots owned by the app-server root agent."""
+
+    roots = [
+        root
+        for skill in getattr(agent, "skills", ())
+        if (root := native_skill_root(getattr(skill, "path", None))) is not None
+    ]
+    return tuple(dict.fromkeys(root.expanduser().resolve() for root in roots))
+
+
 def collect_native_skill_roots(agent: Any, roots: list[Path]) -> None:
     for skill in getattr(agent, "skills", ()):
         root = native_skill_root(getattr(skill, "path", None))
@@ -47,4 +58,3 @@ def native_skill_root(path: Path | None) -> Path | None:
 
 def is_native_skill_path(path: Path | None) -> bool:
     return native_skill_root(path) is not None
-

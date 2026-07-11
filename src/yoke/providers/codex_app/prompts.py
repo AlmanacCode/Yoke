@@ -5,50 +5,50 @@ from __future__ import annotations
 from typing import Any
 
 from yoke.providers.codex_app.skills import is_native_skill_path
-from yoke.providers.compiled import enabled_tools, runtime_hints
 
 
-def developer_instructions(agent: Any) -> str | None:
+def developer_instructions(
+    agent: Any,
+    *,
+    role_names: dict[str, str] | None = None,
+    inline_skills_native: bool = False,
+) -> str | None:
     parts: list[str] = []
     if agent.instructions:
         parts.append(agent.instructions)
-    subagent_text = native_subagents(agent)
+    subagent_text = native_subagents(agent, role_names=role_names)
     if subagent_text:
         parts.append(subagent_text)
-    skill_text = compiled_skills(agent)
+    skill_text = None if inline_skills_native else compiled_skills(agent)
     if skill_text:
         parts.append(skill_text)
     return "\n\n".join(parts) or None
 
 
-def native_subagents(agent: Any) -> str | None:
-    """Describe declared agents as real Codex collaboration calls."""
+def native_subagents(
+    agent: Any,
+    *,
+    role_names: dict[str, str] | None = None,
+) -> str | None:
+    """Tell the parent how to select provider-native named agents."""
 
     subagents = getattr(agent, "subagents", {}) or {}
     if not subagents:
         return None
     sections = [
-        "Available Yoke subagents follow. These are real delegated agents, not "
-        "roles for the parent to simulate. When a request calls for one, invoke "
-        "the native `spawn_agent` tool, pass the declared model override when "
-        "present, include the declared instructions in its task, and wait for "
-        "the child result. Never claim a subagent ran unless a spawn succeeded."
+        "Available native Codex subagents follow. When one matches the work, call "
+        "`spawn_agent` with its exact `agent_type`, use `fork_turns=\"none\"` "
+        "(or a partial turn count), provide only the concrete task, and wait for "
+        "the result. Never simulate these roles or use an untyped generic child."
     ]
     for name, subagent in subagents.items():
+        role_name = (role_names or {}).get(name, name)
         parts = [f"## {name}"]
         if getattr(subagent, "description", None):
             parts.append(f"Description: {subagent.description}")
-        hints = runtime_hints(subagent)
-        if hints:
-            parts.append(f"Spawn overrides: {hints}")
-        tools = enabled_tools(getattr(subagent, "tools", None))
-        if tools:
-            parts.append(f"Requested tools: {', '.join(tools)}")
-        body = getattr(subagent, "instructions", None) or getattr(
-            subagent, "description", None
+        parts.append(
+            f'Invocation: spawn_agent(agent_type="{role_name}", fork_turns="none")'
         )
-        if body:
-            parts.append(f"Child task instructions:\n{body}")
         sections.append("\n".join(parts))
     return "\n\n".join(sections)
 
