@@ -1,8 +1,4 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/AlmanacCode/Yoke/main/docs/assets/banner.png" alt="Yoke — two oxen, one carved yoke: Claude and Codex pulling one load" width="100%" />
-</p>
-
-<p align="center">
   <a href="https://www.python.org/"><img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11+-3776AB?logo=python&logoColor=white"></a>
   <a href="https://peps.python.org/pep-0561/"><img alt="Typed" src="https://img.shields.io/badge/typed-py.typed-2b5b84"></a>
   <a href="https://claude.com/claude-code"><img alt="Claude harness" src="https://img.shields.io/badge/harness-Claude-D97757?logo=anthropic&logoColor=white"></a>
@@ -11,6 +7,10 @@
 </p>
 
 # Yoke
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/AlmanacCode/Yoke/main/docs/assets/definition.png" alt="yoke (yōk), n. A harness that joins two, that they may pull as one. [akin to Skr. yoga, union.]" width="82%" />
+</p>
 
 **A Python SDK for building agents on Claude Code and Codex.**
 
