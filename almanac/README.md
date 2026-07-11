@@ -17,6 +17,8 @@ pages into the runtime, authoring, and provider-surface boundaries.
   planning or provider selection.
 - Read [Agent Folders](concepts/agent-folders) before changing folder-authored
   agents, skills, subagents, workflows, or collections.
+- Read [CodeAlmanac Integration](architecture/codealmanac-integration) before
+  changing the packaged build, ingest, or garden agent boundary.
 - Read [Runs And Sessions](concepts/runs-and-sessions) before changing stored
   execution results or live conversation handles.
 - Read [Normalized Events](concepts/normalized-events) before changing event

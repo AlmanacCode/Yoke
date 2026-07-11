@@ -27,3 +27,7 @@ topics:
     title: Runtime
     description: Runs, sessions, events, and stored execution state
     parents: [concepts]
+  - slug: integration
+    title: Integration
+    description: Product boundaries that embed Yoke in another system
+    parents: [architecture]
