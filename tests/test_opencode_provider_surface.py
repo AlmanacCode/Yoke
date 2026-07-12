@@ -56,4 +56,4 @@ def test_opencode_surface_report_is_app_server_channel_and_runnable() -> None:
     features = {row.feature: row.support for row in report.features}
     assert features["session"] == "native"
     assert features["streaming"] == "emulated"
-    assert features["request_events"] == "unsupported"
+    assert features["request_events"] == "compiled"

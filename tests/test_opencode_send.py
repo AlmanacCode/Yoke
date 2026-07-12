@@ -9,7 +9,8 @@ import pytest
 
 from yoke.errors import YokeError
 from yoke.models import EventKind, RunStatus, Turn
-from yoke.options import RunOptions
+from yoke.options import OpencodeOptions, ProviderOptions, RunOptions
+from yoke.policies import RequestPolicy
 from yoke.providers.opencode import http
 from yoke.providers.opencode_server import OpencodeServer, _OpencodeSession
 
@@ -101,6 +102,103 @@ def test_send_prepends_agent_instructions_on_first_turn_only(
     assert "turn one" in sent_prompts[0]
     assert sent_prompts[1] == "turn two"
     assert "You are a careful maintainer." not in sent_prompts[1]
+
+
+def test_send_resolves_a_pending_permission_via_the_run_level_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        http,
+        "post_message",
+        lambda *args, **kwargs: {"info": {}, "parts": []},
+    )
+    monkeypatch.setattr(
+        http,
+        "list_permissions",
+        lambda base_url, timeout: (
+            {
+                "id": "per_1",
+                "sessionID": "ses_test123",
+                "permission": "bash",
+                "metadata": {"command": "echo hi"},
+            },
+        ),
+    )
+    replies: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        http,
+        "respond_permission",
+        lambda base_url, permission_id, reply, timeout, **kwargs: replies.append(
+            (permission_id, reply)
+        ),
+    )
+    server = OpencodeServer(poll_interval_seconds=0.01)
+    internal = _OpencodeSession(
+        process=_FakeProcess(),
+        session_id="ses_test123",
+        cwd=Path.cwd(),
+        environment=None,
+        db_path=tmp_path / "opencode.db",
+    )
+
+    run = server._send(
+        internal,
+        turn=Turn(prompt="hi"),
+        model="openai/gpt-5",
+        options=RunOptions(
+            provider=ProviderOptions(
+                opencode=OpencodeOptions(policy=RequestPolicy.allow_all())
+            )
+        ),
+    )
+
+    assert replies == [("per_1", "once")]
+    resolved = [e for e in run.events if e.kind == EventKind.REQUEST_RESOLVED]
+    assert len(resolved) == 1
+    assert resolved[0].response is not None
+    assert resolved[0].response.decision == "allow"
+
+
+def test_send_falls_back_to_the_session_level_policy_set_at_start(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        http,
+        "post_message",
+        lambda *args, **kwargs: {"info": {}, "parts": []},
+    )
+    monkeypatch.setattr(
+        http,
+        "list_permissions",
+        lambda base_url, timeout: (
+            {"id": "per_2", "sessionID": "ses_test123", "permission": "bash"},
+        ),
+    )
+    replies: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        http,
+        "respond_permission",
+        lambda base_url, permission_id, reply, timeout, **kwargs: replies.append(
+            (permission_id, reply)
+        ),
+    )
+    server = OpencodeServer(poll_interval_seconds=0.01)
+    internal = _OpencodeSession(
+        process=_FakeProcess(),
+        session_id="ses_test123",
+        cwd=Path.cwd(),
+        environment=None,
+        db_path=tmp_path / "opencode.db",
+        provider_options=OpencodeOptions(policy=RequestPolicy.allow_all()),
+    )
+
+    server._send(
+        internal, turn=Turn(prompt="hi"), model="openai/gpt-5", options=RunOptions()
+    )
+
+    assert replies == [("per_2", "once")]
 
 
 def _make_db(path: Path) -> None:

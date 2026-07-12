@@ -14,6 +14,9 @@ from yoke.providers.opencode.fields import JsonObject, as_record
 OPENCODE_ALLOW_ALL_PERMISSION: tuple[JsonObject, ...] = (
     {"permission": "*", "pattern": "*", "action": "allow"},
 )
+OPENCODE_ASK_ALL_PERMISSION: tuple[JsonObject, ...] = (
+    {"permission": "*", "pattern": "*", "action": "ask"},
+)
 
 
 def get_providers(base_url: str, timeout_seconds: float) -> tuple[JsonObject, ...]:
@@ -32,11 +35,11 @@ def create_session(
     title: str,
     timeout_seconds: float,
     *,
-    allow_all_permissions: bool = True,
+    permission: tuple[JsonObject, ...] = OPENCODE_ALLOW_ALL_PERMISSION,
 ) -> JsonObject:
     body: JsonObject = {"title": title}
-    if allow_all_permissions:
-        body["permission"] = list(OPENCODE_ALLOW_ALL_PERMISSION)
+    if permission:
+        body["permission"] = list(permission)
     response = httpx.post(
         f"{base_url}/session",
         params={"directory": cwd_directory},
@@ -143,18 +146,44 @@ def post_message(
     return as_record(response.json())
 
 
+def list_permissions(base_url: str, timeout_seconds: float) -> tuple[JsonObject, ...]:
+    """List pending permission requests across all sessions.
+
+    GET /permission (operationId permission.list) — confirmed live: a bash
+    permission set to "ask" appeared here immediately and was still listed
+    right up until it was answered via respond_permission(). This is the
+    real, non-deprecated discovery mechanism; /session/:id/permissions/
+    :permissionID (the endpoint this module used before) is marked
+    deprecated in OpenCode's own OpenAPI doc.
+    """
+
+    response = httpx.get(f"{base_url}/permission", timeout=timeout_seconds)
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, list):
+        return ()
+    return tuple(as_record(item) for item in payload if isinstance(item, dict))
+
+
 def respond_permission(
     base_url: str,
-    session_id: str,
     permission_id: str,
-    response_value: str,
+    reply: str,
     timeout_seconds: float,
     *,
-    remember: bool = False,
+    message: str | None = None,
 ) -> None:
+    """Answer a pending permission via POST /permission/:requestID/reply.
+
+    `reply` is one of "once", "always", "reject" (OpenCode's own enum).
+    """
+
+    body: JsonObject = {"reply": reply}
+    if message is not None:
+        body["message"] = message
     response = httpx.post(
-        f"{base_url}/session/{session_id}/permissions/{permission_id}",
-        json={"response": response_value, "remember": remember},
+        f"{base_url}/permission/{permission_id}/reply",
+        json=body,
         timeout=timeout_seconds,
     )
     response.raise_for_status()

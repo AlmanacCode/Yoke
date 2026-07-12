@@ -884,9 +884,22 @@ FEATURE_LOWERING: dict[tuple[Provider, str, Feature], str] = {
         "endpoint, so servers must be known before the session starts."
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.PERMISSIONS): (
-        "Session creation always passes an allow-all permission block; there "
-        "is no polling-discoverable pending-permission signal to build a "
-        "live approval loop on without depending on SSE."
+        "Permissions.approval=ASK passes an ask-all session permission "
+        "block instead of allow-all; OpencodePermissionWatchdog polls "
+        "GET /permission and resolves each pending request via "
+        "POST /permission/:id/reply."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.REQUEST_CALLBACKS): (
+        "ProviderOptions.opencode.request_handler (or .policy, a "
+        "RequestPolicy) is called with the same (event, default) -> "
+        "Response contract as Codex app-server's request_handler."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.REQUEST_EVENTS): (
+        "GET /permission lists pending permissions across sessions — "
+        "confirmed live and non-deprecated, unlike "
+        "/session/:id/permissions/:permissionID which this adapter used "
+        "to target. Polled on its own thread alongside the DB-poll "
+        "progress watchdog, same poll-not-SSE architecture."
     ),
 }
 
@@ -1734,13 +1747,16 @@ MATRIX: dict[tuple[Provider, str], Capabilities] = {
                 "callback exists in the API but is not wired in this adapter.",
             ),
             Feature.PERMISSIONS: (
-                Support.COMPILED,
-                "Session creation always passes an allow-all permission block; "
-                "no live per-request approval loop (see REQUEST_EVENTS).",
+                Support.NATIVE,
+                "Permissions.approval=ASK passes an ask-all session "
+                "permission block (AUTO/NEVER still pass allow-all); "
+                "pending permissions are resolved live (see REQUEST_EVENTS).",
             ),
             Feature.REQUEST_CALLBACKS: (
-                Support.UNSUPPORTED,
-                "See REQUEST_EVENTS.",
+                Support.COMPILED,
+                "ProviderOptions.opencode.request_handler/policy answer "
+                "pending permissions the same RequestPolicy/Response "
+                "contract Codex app-server and Claude use.",
             ),
             Feature.CODEX_PERMISSIONS: Support.UNSUPPORTED,
             Feature.CLAUDE_PERMISSIONS: Support.UNSUPPORTED,
@@ -1798,12 +1814,12 @@ MATRIX: dict[tuple[Provider, str], Capabilities] = {
             Feature.NATIVE_WORKFLOW: Support.UNSUPPORTED,
             Feature.EXPERIMENTAL_API: Support.UNSUPPORTED,
             Feature.REQUEST_EVENTS: (
-                Support.UNSUPPORTED,
-                "POST /session/:id/permissions/:permissionID can answer a "
-                "pending request, but there is no polling-discoverable way to "
-                "learn a permission is pending — OpenCode's docs indicate "
-                "this is only learnable via SSE, which this adapter "
-                "deliberately does not depend on.",
+                Support.COMPILED,
+                "GET /permission (confirmed live, non-deprecated) is polled "
+                "the same way OpencodeProgressWatchdog polls SQLite; pending "
+                "permissions are resolved via POST /permission/:id/reply — "
+                "no SSE dependency needed, disproving this adapter's earlier "
+                "assumption that discovery required it.",
             ),
         }
     ),

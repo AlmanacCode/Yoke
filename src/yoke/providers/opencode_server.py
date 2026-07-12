@@ -17,6 +17,7 @@ from pathlib import Path
 
 from yoke.errors import UnsupportedFeature, YokeError
 from yoke.models import (
+    Approval,
     Event,
     EventKind,
     Goal,
@@ -24,6 +25,7 @@ from yoke.models import (
     Harness,
     Login,
     Model,
+    Permissions,
     Provider,
     Readiness,
     Run,
@@ -41,15 +43,18 @@ from yoke.models import (
 from yoke.options import (
     ForkOptions,
     GoalLoopOptions,
+    OpencodeOptions,
     RunOptions,
     SessionOptions,
     WorkflowOptions,
+    opencode_request_handler,
 )
 from yoke.providers.opencode import http
 from yoke.providers.opencode.db import query_readonly_or_empty
 from yoke.providers.opencode.failures import classify_opencode_failure
 from yoke.providers.opencode.fields import JsonObject, as_record, string_field
 from yoke.providers.opencode.parts import final_text_from_parts
+from yoke.providers.opencode.permissions import OpencodePermissionWatchdog
 from yoke.providers.opencode.process import (
     OpencodeServerProcess,
     OpencodeServerStartupError,
@@ -100,6 +105,9 @@ class _OpencodeSession:
     # earlier turn's already-seen parts through on_event.
     known_sessions: set[str] = field(default_factory=set)
     seen_part_ids: set[str] = field(default_factory=set)
+    # Persisted the same way as seen_part_ids, so a permission answered on an
+    # earlier turn isn't rediscovered and re-resolved on a later one.
+    seen_permission_ids: set[str] = field(default_factory=set)
     # OpenCode's session/message API has no dedicated system-prompt field
     # (unlike Claude's system_prompt or Codex app-server's developer
     # instructions) — Agent.instructions is prepended to the first turn's
@@ -107,6 +115,10 @@ class _OpencodeSession:
     # task prompt and never learns what it's actually supposed to do.
     instructions: str | None = None
     instructions_sent: bool = False
+    # Session-level provider.opencode options (mirrors CodexAppServer's
+    # thread.provider_options): a later turn's RunOptions.provider.opencode
+    # overrides this, but falls back here when a turn doesn't set one.
+    provider_options: OpencodeOptions | dict[str, object] | None = None
 
 
 class OpencodeServer:
@@ -289,6 +301,10 @@ class OpencodeServer:
             # were never sent at all and isn't the intent here.
             instructions=internal.instructions,
             instructions_sent=True,
+            # Same reasoning as instructions: a fork should keep answering
+            # permissions the way the parent session was configured to,
+            # not silently fall back to "no handler configured" default-deny.
+            provider_options=internal.provider_options,
         )
         self._retain_process(internal.process)
         self._sessions[forked_id] = forked
@@ -347,9 +363,7 @@ class OpencodeServer:
             provider_session_id=internal.session_id,
             agent=harness.agent,
             cwd=harness.cwd,
-            permissions=options.permissions
-            or harness.permissions
-            or harness.agent.permissions,
+            permissions=_resolved_permissions(harness, options),
             model=options.model or harness.agent.model,
             runtime_root=harness.runtime_root,
         )
@@ -616,7 +630,9 @@ class OpencodeServer:
                 str(harness.cwd),
                 harness.agent.description or "yoke run",
                 OPENCODE_RUN_REQUEST_TIMEOUT_SECONDS,
-                allow_all_permissions=_allow_all(options),
+                permission=_session_permission_block(
+                    _resolved_permissions(harness, options)
+                ),
             )
             session_id = string_field(record, "id")
             if session_id is None:
@@ -631,6 +647,7 @@ class OpencodeServer:
             environment=environment or None,
             db_path=self._resolve_db_path(),
             instructions=harness.agent.instructions,
+            provider_options=opencode_options(options),
         )
 
     def _resolve_db_path(self) -> Path:
@@ -690,6 +707,22 @@ class OpencodeServer:
         )
         watchdog_thread.start()
 
+        effective_options = (
+            opencode_options_for_run(options) or internal.provider_options
+        )
+        permission_watchdog = OpencodePermissionWatchdog(
+            base_url=internal.process.base_url,
+            session_id=internal.session_id,
+            on_event=emit,
+            request_handler=opencode_request_handler(effective_options),
+            poll_interval_seconds=self.poll_interval_seconds,
+            seen_permission_ids=internal.seen_permission_ids,
+        )
+        permission_thread = threading.Thread(
+            target=permission_watchdog.run, args=(stop_event,), daemon=True
+        )
+        permission_thread.start()
+
         message_result: dict[str, JsonObject | Exception] = {}
 
         def _post() -> None:
@@ -730,6 +763,7 @@ class OpencodeServer:
 
         stop_event.set()
         watchdog_thread.join(timeout=self.poll_interval_seconds * 2 + 5)
+        permission_thread.join(timeout=self.poll_interval_seconds * 2 + 5)
 
         if "error" in message_result:
             error = message_result["error"]
@@ -762,17 +796,38 @@ class OpencodeServer:
         )
 
 
-def _allow_all(options: SessionOptions) -> bool:
-    """Whether to pass OpenCode's blanket allow-all permission block.
+def _resolved_permissions(harness: Harness, options: SessionOptions) -> Permissions:
+    return options.permissions or harness.permissions or harness.agent.permissions
 
-    Always true today: there is no polling-discoverable "pending permission"
-    signal without SSE (see the opencode provider plan's capability table),
-    so `Approval.ASK` cannot be honored with a live interactive response.
-    This is a named seam so a future SSE-backed approval loop has one call
-    site to change, not a scattered `True` literal.
+
+def _session_permission_block(permissions: Permissions) -> tuple[JsonObject, ...]:
+    """Return the session-creation permission block for a resolved posture.
+
+    `Approval.ASK` is the only posture this adapter can honor with a live
+    signal now that `GET /permission` + `POST /permission/:id/reply` are
+    wired (OpencodePermissionWatchdog, providers/opencode/permissions.py,
+    confirmed live in a 2026-07-12 spike) — AUTO and NEVER both mean "don't
+    ask", matching Codex's own approval_policy() mapping
+    (providers/codex_app/policy.py).
     """
 
-    return True
+    if permissions.approval is Approval.ASK:
+        return http.OPENCODE_ASK_ALL_PERMISSION
+    return http.OPENCODE_ALLOW_ALL_PERMISSION
+
+
+def opencode_options(options: SessionOptions) -> OpencodeOptions | dict[str, object]:
+    if options.provider is None:
+        return {}
+    return options.provider.opencode
+
+
+def opencode_options_for_run(
+    options: RunOptions,
+) -> OpencodeOptions | dict[str, object] | None:
+    if options.provider is None:
+        return None
+    return options.provider.opencode
 
 
 def _model_ids(entries: object) -> tuple[str, ...]:
