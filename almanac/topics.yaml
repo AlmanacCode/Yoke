@@ -31,3 +31,7 @@ topics:
     title: Integration
     description: Product boundaries that embed Yoke in another system
     parents: [architecture]
+  - slug: knowledge
+    title: Knowledge
+    description: Reusable factual context, hosted knowledge, and agent knowledge dependencies
+    parents: [concepts, integration]
