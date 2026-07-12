@@ -27,6 +27,7 @@ from yoke.providers.native_skills import (
     native_skill_text,
     skill_directory_name,
 )
+from yoke.providers.opencode.agents import opencode_agent_files
 
 
 @dataclass(slots=True)
@@ -263,13 +264,21 @@ def _write_claude(agent: Agent, deployment: RuntimeDeployment) -> None:
 
 
 def _write_opencode(agent: Agent, deployment: RuntimeDeployment) -> None:
-    # OpenCode discovers skills from a config directory the same shape as
-    # its own `.opencode/` project convention (skills/<name>/SKILL.md),
-    # pointed at via OPENCODE_CONFIG_DIR — no files land in the user's real
-    # project, unlike a naive `.opencode/skills/` write into harness.cwd.
+    # OpenCode discovers skills and custom agents from a config directory
+    # the same shape as its own `.opencode/` project convention
+    # (skills/<name>/SKILL.md, agents/<name>.md), pointed at via
+    # OPENCODE_CONFIG_DIR — no files land in the user's real project, unlike
+    # a naive `.opencode/` write into harness.cwd.
     config_dir = deployment.root / "opencode_config"
     skills = config_dir / "skills"
-    if _write_skills(inline_skills(agent), Provider.OPENCODE, skills):
+    wrote_skills = bool(_write_skills(inline_skills(agent), Provider.OPENCODE, skills))
+    wrote_agents = False
+    for file in opencode_agent_files(agent, directory="agents"):
+        path = config_dir / file.path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(file.text)
+        wrote_agents = True
+    if wrote_skills or wrote_agents:
         deployment.opencode_config_dir = config_dir
     mcp_servers = option_mapping(agent, "mcp_servers")
     if mcp_servers:

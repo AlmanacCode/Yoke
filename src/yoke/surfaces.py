@@ -653,6 +653,13 @@ FEATURE_EVIDENCE: dict[tuple[Provider, str, Feature], tuple[str, ...]] = {
         "https://opencode.ai/docs/skills/",
         "https://opencode.ai/docs/config/",
     ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.FILESYSTEM_AGENT): (
+        "https://opencode.ai/docs/agents/",
+        "https://opencode.ai/docs/config/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.DECLARED_SUBAGENTS): (
+        "https://opencode.ai/docs/agents/",
+    ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.INLINE_SUBAGENTS): (
         "https://opencode.ai/docs/server/",
     ),
@@ -850,6 +857,16 @@ FEATURE_LOWERING: dict[tuple[Provider, str, Feature], str] = {
         "Yoke skills render as SKILL.md files under a Yoke-owned deployment "
         "directory; OPENCODE_CONFIG_DIR points OpenCode at it without "
         "touching the user's real project."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.FILESYSTEM_AGENT): (
+        "Direct Yoke subagents render as agents/<name>.md markdown with "
+        "YAML frontmatter (description, mode: subagent, model), written "
+        "under the same OPENCODE_CONFIG_DIR skills use."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.DECLARED_SUBAGENTS): (
+        "Same agents/<name>.md files as FILESYSTEM_AGENT; OpenCode "
+        "auto-discovers them from OPENCODE_CONFIG_DIR, no explicit "
+        "registration call is needed."
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.INLINE_SUBAGENTS): (
         "OpenCode's built-in `task` tool spawns a child session; Yoke "
@@ -1727,16 +1744,25 @@ MATRIX: dict[tuple[Provider, str], Capabilities] = {
             ),
             Feature.CODEX_PERMISSIONS: Support.UNSUPPORTED,
             Feature.CLAUDE_PERMISSIONS: Support.UNSUPPORTED,
-            Feature.FILESYSTEM_AGENT: Support.UNSUPPORTED,
+            Feature.FILESYSTEM_AGENT: (
+                Support.COMPILED,
+                "Direct Yoke subagents compile into agents/<name>.md "
+                "markdown files with YAML frontmatter under the same "
+                "OPENCODE_CONFIG_DIR used for skills; nested subagents-of-"
+                "subagents are not compiled (OpenCode documents no nested "
+                "invocation model to target).",
+            ),
             Feature.INLINE_SUBAGENTS: (
                 Support.NATIVE,
                 "The built-in `task` tool spawns a child session, discovered "
                 "and normalized by the DB-poll watchdog.",
             ),
             Feature.DECLARED_SUBAGENTS: (
-                Support.UNKNOWN,
-                "GET /agent lists agents but the on-disk format Yoke would "
-                "need to write them in is unconfirmed.",
+                Support.COMPILED,
+                "Yoke subagents compile to agents/<name>.md with "
+                "`mode: subagent`; OpenCode auto-discovers them from "
+                "OPENCODE_CONFIG_DIR, invocation remains model-driven "
+                "(@mention or delegation).",
             ),
             Feature.COLLAB_AGENT_TOOLS: Support.UNSUPPORTED,
             Feature.COLLABORATION_MODE: Support.UNSUPPORTED,

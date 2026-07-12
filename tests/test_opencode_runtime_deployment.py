@@ -81,6 +81,45 @@ def test_opencode_runtime_skips_config_content_without_mcp_servers(
         deployment.cleanup()
 
 
+def test_opencode_runtime_compiles_direct_subagent_as_filesystem_agent(
+    tmp_path: Path,
+) -> None:
+    agent = Agent(
+        instructions="root",
+        subagents={
+            "reviewer": Agent(
+                description="Find correctness issues.",
+                instructions="Review the patch for bugs.",
+            )
+        },
+    )
+    deployment = deploy_runtime(agent, "opencode", tmp_path)
+    try:
+        assert deployment.opencode_config_dir is not None
+        agent_file = deployment.opencode_config_dir / "agents" / "reviewer.md"
+        assert agent_file.is_file()
+        text = agent_file.read_text()
+        assert 'description: "Find correctness issues."' in text
+        assert "mode: subagent" in text
+        assert "Review the patch for bugs." in text
+    finally:
+        deployment.cleanup()
+
+
+def test_opencode_runtime_sets_config_dir_for_subagents_without_skills(
+    tmp_path: Path,
+) -> None:
+    agent = Agent(
+        instructions="root",
+        subagents={"reviewer": Agent(instructions="review")},
+    )
+    deployment = deploy_runtime(agent, "opencode", tmp_path)
+    try:
+        assert deployment.opencode_config_dir is not None
+    finally:
+        deployment.cleanup()
+
+
 def test_opencode_shared_process_keeps_runtime_until_last_release(
     tmp_path: Path,
 ) -> None:
