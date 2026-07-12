@@ -33,5 +33,5 @@ topics:
     parents: [architecture]
   - slug: knowledge
     title: Knowledge
-    description: Reusable factual context, hosted knowledge, and agent knowledge dependencies
+    description: Reusable factual context, maintained knowledge, and agent knowledge dependencies
     parents: [concepts, integration]
