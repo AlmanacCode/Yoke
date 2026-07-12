@@ -6,27 +6,37 @@ sources: []
 
 # Yoke Wiki
 
-This wiki is the durable project memory for Yoke. Start here when you need the
-shared vocabulary behind the provider-neutral harness, then follow the concept
-pages into the runtime, authoring, and provider-surface boundaries.
+This wiki is the durable project memory for Yoke. It explains the shared
+vocabulary behind the provider-neutral harness, then routes readers into the
+runtime, authoring, provider-surface, and product-integration boundaries.
 
 ## Where to start
 
-- Read [Yoke Harness](concepts/yoke-harness) first for the main abstraction.
-- Read [Provider Surfaces](concepts/provider-surfaces) before changing feature
-  planning or provider selection.
-- Read [Agent Folders](concepts/agent-folders) before changing folder-authored
-  agents, skills, subagents, workflows, or collections.
-- Read [Knowledge Packages](concepts/knowledge-packages) before treating
-  factual context as a skill or designing agent knowledge dependencies.
-- Read [codealmanac Integration](architecture/codealmanac-integration) before
-  changing the packaged build, ingest, or garden agent boundary.
-- Read [Runs And Sessions](concepts/runs-and-sessions) before changing stored
-  execution results or live conversation handles.
-- Read [Normalized Events](concepts/normalized-events) before changing event
-  streaming, provider event mapping, or request events.
-- Read [CLI And Run Storage](reference/cli-and-run-storage) before changing
-  shell commands or `.yoke/runs/` snapshots.
+Start with [Yoke Harness](concepts/yoke-harness). It is the central abstraction
+that binds an agent definition to a Claude or Codex surface.
+
+For provider planning, read [Provider Surfaces](concepts/provider-surfaces).
+That page explains why capability checks are surface-specific rather than only
+provider-specific.
+
+For filesystem-authored agents, read [Agent Folders](concepts/agent-folders).
+Use it before changing folder agents, skills, subagents, workflows, or named
+collections.
+
+For execution state, read [Runs And Sessions](concepts/runs-and-sessions),
+[Normalized Events](concepts/normalized-events), and
+[CLI And Run Storage](reference/cli-and-run-storage). Together they explain the
+difference between live conversations, collected run results, event streams,
+and `.yoke/runs/` snapshots.
+
+For product embedding, read
+[codealmanac Integration](architecture/codealmanac-integration). It records the
+thin adapter boundary where `codealmanac` owns wiki lifecycle work and Yoke owns
+agent definitions, surfaces, and harness execution.
+
+For future context design, read [Knowledge Packages](concepts/knowledge-packages).
+That page is deliberately marked as a proposed primitive, not a shipped folder
+contract.
 
 ## Maintenance standard
 
