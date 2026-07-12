@@ -3,6 +3,9 @@ title: "CLI And Run Storage"
 summary: "The Yoke CLI loads collection agents, executes runs or workflows, and writes inspectable snapshots under a chosen .yoke store."
 topics: [reference, cli, runtime, authoring]
 sources:
+  - id: readme
+    type: file
+    path: README.md
   - id: cli
     type: file
     path: src/yoke/cli.py
@@ -52,6 +55,8 @@ Workflow results use the same store. The record kind becomes `workflow`, workflo
 The current `.yoke` files are useful snapshots, but the store does not own the execution lifecycle. `RunStore.record(...)` accepts a completed `Run` or `WorkflowRun`, creates the run directory, and writes `result.json`, `events.jsonl`, and `record.json` after the result object already exists [@store]. The CLI follows the same order: it awaits `harness.run(...)` or `harness.workflow(...)`, then calls `RunStore.at(args.store).record(...)` [@cli].
 
 That means direct SDK callers can run a harness without persisting anything unless they explicitly call `RunStore.record(...)` [@storage-transcript]. It also means events are durable only after the run returns and the record write succeeds; a killed process can lose the Yoke snapshot even if provider-native transcripts exist elsewhere [@storage-transcript]. Embedding products that need stronger durability should attach live event handling through Yoke's event surfaces and persist those events in their own lifecycle store, or introduce a store-managed execution boundary before treating `.yoke/runs/` as crash-safe history [@storage-transcript].
+
+Use the store root, not the `runs/` directory, when calling `RunStore.at(...)`. The implementation always appends `runs`, so `RunStore.at(".yoke")` writes `.yoke/runs/<run_id>/` [@store]. A README CLI paragraph still shows `RunStore.at(".yoke/runs").record(result)`, but that would create `.yoke/runs/runs/<run_id>/` with the current store implementation [@readme] [@store].
 
 ## Inspection commands
 
