@@ -861,8 +861,9 @@ FEATURE_LOWERING: dict[tuple[Provider, str, Feature], str] = {
         "SSE stream was found unreliable for this in a prior live spike."
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.MCP): (
-        "MCP servers compile into OPENCODE_CONFIG_CONTENT/OPENCODE_CONFIG_DIR "
-        "config, since OpenCode has no runtime add-server endpoint."
+        "Not yet implemented: OpenCode has no runtime add-server endpoint, "
+        "and this adapter does not compile Yoke MCP config into OpenCode's "
+        "OPENCODE_CONFIG_CONTENT/OPENCODE_CONFIG_DIR config file."
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.PERMISSIONS): (
         "Session creation always passes an allow-all permission block; there "
@@ -1751,8 +1752,11 @@ MATRIX: dict[tuple[Provider, str], Capabilities] = {
             ),
             Feature.HOOKS: Support.UNSUPPORTED,
             Feature.MCP: (
-                Support.COMPILED,
-                "MCP servers are config-file only; no runtime add-server API.",
+                Support.UNSUPPORTED,
+                "OpenCode reads MCP servers from OPENCODE_CONFIG_CONTENT/"
+                "OPENCODE_CONFIG_DIR config, but this adapter does not yet "
+                "compile Yoke MCP config into that file — no runtime "
+                "add-server API exists either.",
             ),
             Feature.GOAL: Support.UNSUPPORTED,
             Feature.GOAL_LOOP: Support.UNSUPPORTED,

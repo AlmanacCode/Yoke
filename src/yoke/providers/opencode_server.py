@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -94,7 +95,6 @@ class _OpencodeSession:
     session_id: str
     cwd: Path
     environment: dict[str, str] | None
-    deployment: RuntimeDeployment | None
     db_path: Path
     # Persist across turns so a later send() doesn't re-poll and re-emit an
     # earlier turn's already-seen parts through on_event.
@@ -135,6 +135,12 @@ class OpencodeServer:
         # than tied to any one session — mirrors CodexAppServer's
         # _retain_process/_release_process.
         self._process_refs: dict[int, int] = {}
+        # Keyed by id(process), not by session: a fork shares its parent's
+        # runtime deployment (skills dir, OPENCODE_CONFIG_DIR), so cleanup
+        # must wait for the last session referencing that process to close,
+        # not whichever session happens to close first. Mirrors
+        # CodexAppServer's own _deployments keyed by id(process).
+        self._deployments: dict[int, RuntimeDeployment] = {}
 
     async def check(self, harness: Harness) -> Readiness:
         return await asyncio.to_thread(self._check, harness.cwd, harness.environment)
@@ -275,8 +281,14 @@ class OpencodeServer:
             session_id=forked_id,
             cwd=internal.cwd,
             environment=internal.environment,
-            deployment=None,
             db_path=internal.db_path,
+            # A fork already carries the parent conversation's context
+            # server-side, so re-sending instructions on the fork's first
+            # turn would be redundant — mark instructions_sent=True rather
+            # than leaving instructions=None, which would look like they
+            # were never sent at all and isn't the intent here.
+            instructions=internal.instructions,
+            instructions_sent=True,
         )
         self._retain_process(internal.process)
         self._sessions[forked_id] = forked
@@ -326,6 +338,7 @@ class OpencodeServer:
             deployment.cleanup()
             raise
         self._retain_process(internal.process)
+        self._deployments[id(internal.process)] = deployment
         self._sessions[internal.session_id] = internal
         return Session(
             provider=self.provider,
@@ -348,13 +361,54 @@ class OpencodeServer:
             raise YokeError('opencode send needs a model ("provider/model").')
         return await asyncio.to_thread(self._send, internal, turn, model, options)
 
+    async def stream(
+        self,
+        session: Session,
+        turn: Turn,
+        options: RunOptions,
+    ) -> AsyncIterator[Event]:
+        internal = self._require_internal(session)
+        model = options.model or turn.model or session.model
+        if model is None:
+            raise YokeError('opencode stream needs a model ("provider/model").')
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[Event | None] = asyncio.Queue()
+        user_on_event = options.on_event
+
+        def relay(event: Event) -> None:
+            if user_on_event is not None:
+                user_on_event(event)
+            loop.call_soon_threadsafe(queue.put_nowait, event)
+
+        # _send already emits every event through options.on_event as it
+        # happens (the DB-poll watchdog calls it live, turn by turn), so
+        # streaming just needs to relay those same events onto an asyncio
+        # queue instead of collecting them into a Run — no separate
+        # streaming implementation to keep in sync with _send's logic.
+        streaming_options = options.model_copy(update={"on_event": relay})
+        send_task = asyncio.ensure_future(
+            asyncio.to_thread(self._send, internal, turn, model, streaming_options)
+        )
+        send_task.add_done_callback(
+            lambda _task: loop.call_soon_threadsafe(queue.put_nowait, None)
+        )
+        try:
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
+                yield event
+        finally:
+            run = await send_task
+        if run.status == RunStatus.FAILED:
+            message = run.failure.message if run.failure is not None else run.output
+            raise YokeError(message)
+
     async def close(self, session: Session) -> None:
         internal = self._sessions.pop(session.id, None)
         if internal is None:
             return
         await asyncio.to_thread(self._release_process, internal.process)
-        if internal.deployment is not None:
-            await asyncio.to_thread(internal.deployment.cleanup)
 
     # -- synchronous internals, bridged via asyncio.to_thread above --
 
@@ -374,6 +428,9 @@ class OpencodeServer:
         if count <= 1:
             self._process_refs.pop(key, None)
             process.terminate()
+            deployment = self._deployments.pop(key, None)
+            if deployment is not None:
+                deployment.cleanup()
             return
         self._process_refs[key] = count - 1
 
@@ -570,7 +627,6 @@ class OpencodeServer:
             session_id=session_id,
             cwd=harness.cwd,
             environment=environment or None,
-            deployment=deployment,
             db_path=self._resolve_db_path(),
             instructions=harness.agent.instructions,
         )

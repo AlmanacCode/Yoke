@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
-from yoke.models import EventKind, Turn
+from yoke.errors import YokeError
+from yoke.models import EventKind, RunStatus, Turn
 from yoke.options import RunOptions
 from yoke.providers.opencode import http
 from yoke.providers.opencode_server import OpencodeServer, _OpencodeSession
@@ -39,7 +42,6 @@ def test_send_emits_provider_session_event_first(
         session_id="ses_test123",
         cwd=Path.cwd(),
         environment=None,
-        deployment=None,
         db_path=tmp_path / "opencode.db",
     )
 
@@ -78,7 +80,6 @@ def test_send_prepends_agent_instructions_on_first_turn_only(
         session_id="ses_test123",
         cwd=Path.cwd(),
         environment=None,
-        deployment=None,
         db_path=tmp_path / "opencode.db",
         instructions="You are a careful maintainer.",
     )
@@ -100,3 +101,178 @@ def test_send_prepends_agent_instructions_on_first_turn_only(
     assert "turn one" in sent_prompts[0]
     assert sent_prompts[1] == "turn two"
     assert "You are a careful maintainer." not in sent_prompts[1]
+
+
+def _make_db(path: Path) -> None:
+    import sqlite3
+
+    connection = sqlite3.connect(path)
+    connection.execute(
+        "CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, data TEXT, "
+        "time_created INTEGER)"
+    )
+    connection.execute(
+        "CREATE TABLE part (id TEXT PRIMARY KEY, session_id TEXT, message_id TEXT, "
+        "data TEXT, time_created INTEGER)"
+    )
+    connection.commit()
+    connection.close()
+
+
+def _insert_stuck_tool_part(path: Path, *, session_id: str) -> None:
+    import json
+    import sqlite3
+
+    connection = sqlite3.connect(path)
+    connection.execute(
+        "INSERT OR IGNORE INTO message (id, session_id, data, time_created) "
+        "VALUES (?, ?, ?, ?)",
+        ("m1", session_id, json.dumps({"role": "assistant"}), 1),
+    )
+    stuck_start_ms = int((time.time() - 10_000) * 1000)
+    connection.execute(
+        "INSERT INTO part (id, session_id, message_id, data, time_created) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (
+            "p1",
+            session_id,
+            "m1",
+            json.dumps(
+                {
+                    "type": "tool",
+                    "tool": "bash",
+                    "state": {"status": "running", "time": {"start": stuck_start_ms}},
+                }
+            ),
+            1,
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+
+def test_send_reacts_to_a_stuck_tool_call_by_terminating_and_returning_failed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression/coverage gap: only the watchdog itself was tested for
+    # stuck-tool-call detection in isolation. This exercises _send's actual
+    # reaction — stop the watchdog, terminate the process, classify the
+    # failure, and return a FAILED Run — which was previously untested at
+    # the adapter level.
+    db_path = tmp_path / "opencode.db"
+    _make_db(db_path)
+    _insert_stuck_tool_part(db_path, session_id="ses_stuck")
+
+    class _TrackingProcess:
+        def __init__(self) -> None:
+            self.base_url = "http://127.0.0.1:0"
+            self.terminated = False
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+    def hanging_post_message(*args, **kwargs):
+        # Blocks long enough for the watchdog (polling every 0.01s with a
+        # 0.01s stuck threshold against an already-old part row) to detect
+        # the stuck state and cause _send to unwind before this returns.
+        time.sleep(2)
+        return {"info": {}, "parts": []}
+
+    monkeypatch.setattr(http, "post_message", hanging_post_message)
+    server = OpencodeServer(
+        poll_interval_seconds=0.01,
+        stuck_after_seconds=0.01,
+    )
+    process = _TrackingProcess()
+    internal = _OpencodeSession(
+        process=process,
+        session_id="ses_stuck",
+        cwd=Path.cwd(),
+        environment=None,
+        db_path=db_path,
+    )
+
+    run = server._send(
+        internal, turn=Turn(prompt="hi"), model="openai/gpt-5", options=RunOptions()
+    )
+
+    assert run.status == RunStatus.FAILED
+    assert run.failure is not None
+    assert process.terminated is True
+
+
+def test_stream_yields_events_live_and_ends_without_a_final_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        http,
+        "post_message",
+        lambda *args, **kwargs: {
+            "info": {"tokens": {"input": 1, "output": 1, "total": 2}},
+            "parts": [{"type": "text", "text": "hello"}],
+        },
+    )
+    server = OpencodeServer()
+    session_id = "ses_stream"
+    server._sessions[session_id] = _OpencodeSession(
+        process=_FakeProcess(),
+        session_id=session_id,
+        cwd=Path.cwd(),
+        environment=None,
+        db_path=tmp_path / "opencode.db",
+    )
+    session = _session_for(server, session_id)
+
+    async def exercise() -> list:
+        events = []
+        async for event in server.stream(
+            session, Turn(prompt="hi"), RunOptions(model="openai/gpt-5")
+        ):
+            events.append(event)
+        return events
+
+    events = asyncio.run(exercise())
+    assert events[0].kind == EventKind.PROVIDER_SESSION
+    assert events[0].provider_session_id == session_id
+
+
+def test_stream_raises_on_failure_instead_of_silently_ending(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def failing_post_message(*args, **kwargs):
+        raise RuntimeError("opencode request failed")
+
+    monkeypatch.setattr(http, "post_message", failing_post_message)
+    server = OpencodeServer()
+    session_id = "ses_stream_fail"
+    server._sessions[session_id] = _OpencodeSession(
+        process=_FakeProcess(),
+        session_id=session_id,
+        cwd=Path.cwd(),
+        environment=None,
+        db_path=tmp_path / "opencode.db",
+    )
+    session = _session_for(server, session_id)
+
+    async def exercise() -> None:
+        async for _event in server.stream(
+            session, Turn(prompt="hi"), RunOptions(model="openai/gpt-5")
+        ):
+            pass
+
+    with pytest.raises(YokeError):
+        asyncio.run(exercise())
+
+
+def _session_for(server: OpencodeServer, session_id: str):
+    from yoke.models import Session
+
+    return Session(
+        provider=server.provider,
+        surface=server.surface,
+        id=session_id,
+        provider_session_id=session_id,
+    )
