@@ -21,6 +21,9 @@ sources:
   - id: codex-app-server
     type: file
     path: src/yoke/providers/codex_app_server.py
+  - id: setup-transcript
+    type: conversation
+    path: /Users/rohan/.codex/sessions/2026/07/12/rollout-2026-07-12T00-01-58-019f5521-fafb-7321-af60-99eaaea6fbca.jsonl
 ---
 
 `codealmanac` is the reference product integration for Yoke. Its durable boundary is that `codealmanac` owns wiki lifecycle work, run records, validation, and product events, while Yoke owns the agent definition, provider surface, and harness execution layer [@yoke-only-note]. The current migration contract makes that boundary concrete: `codealmanac` uses Yoke-native packaged agents for build, ingest, and garden, and the adapter only loads an agent, binds it to a [Yoke Harness](../concepts/yoke-harness), invokes Yoke, and projects normalized results back into `codealmanac` lifecycle records [@integration-transcript].
@@ -36,6 +39,12 @@ Stable instructions belong in `instructions.md`. Per-run prompts should contain 
 The adapter should not recreate provider orchestration in `codealmanac`. The earlier Yoke-only note removed direct Claude and Codex adapter packages from the product and kept the lifecycle path as `codealmanac -> Yoke -> Claude/Codex` [@yoke-only-note]. The final migration contract tightens the same rule: select one typed agent kind, load the packaged agent, run Yoke, and translate Yoke events/results into `codealmanac` lifecycle records [@integration-transcript].
 
 Agent selection is a required typed enum for `build`, `ingest`, or `garden` [@integration-transcript]. That keeps selection explicit while avoiding a second `codealmanac` helper-selection pipeline. Native provider behavior, including helper agents on the Codex app-server surface, remains inside the harness path instead of being duplicated in Python product code [@integration-transcript].
+
+## Agent Knowledge Access
+
+`codealmanac` should expose maintained knowledge to agents through the public `codealmanac` CLI first, not through a required MCP server, bundled skill, or attached script [@setup-transcript]. The proposed first-version product shape is `codealmanac setup` installing concise global agent instructions; those instructions tell shell-capable agents to run commands such as `codealmanac discover`, `codealmanac search`, and `codealmanac show` when external technical knowledge is relevant [@setup-transcript].
+
+This keeps the access path small: installed agent guidance points the agent to the CLI, and the CLI calls the hosted knowledge API [@setup-transcript]. Authentication can remain in the CLI, the same path works across Codex and Claude-style shell agents, and MCP can be added later without changing the knowledge product boundary [@setup-transcript].
 
 ## Runtime Environment
 

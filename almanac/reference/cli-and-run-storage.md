@@ -18,6 +18,9 @@ sources:
   - id: store-tests
     type: file
     path: tests/test_store.py
+  - id: storage-transcript
+    type: conversation
+    path: /Users/rohan/.codex/sessions/2026/07/10/rollout-2026-07-10T19-50-43-019f4f15-9750-7373-bf99-6eb61ab7ab46.jsonl
 ---
 
 The Yoke CLI is the shell surface for folder-authored agents. It loads a named agent from a collection folder, binds it to a [Yoke Harness](../concepts/yoke-harness), runs a command, and stores the result in a local `.yoke` run store when the command produces an execution result [@cli]. This makes CLI runs inspectable without changing the provider-native transcript locations that Claude or Codex may maintain themselves [@reference].
@@ -43,6 +46,12 @@ The Yoke CLI is the shell surface for folder-authored agents. It loads a named a
 Each stored result has `record.json` and `result.json`; `events.jsonl` exists only when the run or workflow has normalized events [@store]. `record.json` is the inspection index. It records the generated Yoke run id, kind, provider, surface, status, cwd, agent, collection, provider session id, paths to stored files, and event count [@store]. `result.json` stores the provider-neutral result without volatile raw provider objects, and `events.jsonl` stores normalized events as JSON Lines without raw provider objects [@store].
 
 Workflow results use the same store. The record kind becomes `workflow`, workflow events are collected from step runs, and the stored provider session id is the first provider session id found in those step runs [@store] [@store-tests].
+
+## Storage lifecycle limits
+
+The current `.yoke` files are useful snapshots, but the store does not own the execution lifecycle. `RunStore.record(...)` accepts a completed `Run` or `WorkflowRun`, creates the run directory, and writes `result.json`, `events.jsonl`, and `record.json` after the result object already exists [@store]. The CLI follows the same order: it awaits `harness.run(...)` or `harness.workflow(...)`, then calls `RunStore.at(args.store).record(...)` [@cli].
+
+That means direct SDK callers can run a harness without persisting anything unless they explicitly call `RunStore.record(...)` [@storage-transcript]. It also means events are durable only after the run returns and the record write succeeds; a killed process can lose the Yoke snapshot even if provider-native transcripts exist elsewhere [@storage-transcript]. Embedding products that need stronger durability should attach live event handling through Yoke's event surfaces and persist those events in their own lifecycle store, or introduce a store-managed execution boundary before treating `.yoke/runs/` as crash-safe history [@storage-transcript].
 
 ## Inspection commands
 
