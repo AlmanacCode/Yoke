@@ -1,6 +1,6 @@
 ---
-title: "CodeAlmanac Integration"
-summary: "CodeAlmanac integrates with Yoke by packaging build, ingest, and garden as Yoke-native agents and keeping the product adapter thin."
+title: "codealmanac Integration"
+summary: "codealmanac integrates with Yoke by packaging build, ingest, and garden as Yoke-native agents and keeping the product adapter thin."
 topics: [architecture, integration, authoring, runtime]
 sources:
   - id: integration-transcript
@@ -23,19 +23,19 @@ sources:
     path: src/yoke/providers/codex_app_server.py
 ---
 
-CodeAlmanac is the reference product integration for Yoke. Its durable boundary is that CodeAlmanac owns wiki lifecycle work, run records, validation, and product events, while Yoke owns the agent definition, provider surface, and harness execution layer [@yoke-only-note]. The current migration contract makes that boundary concrete: CodeAlmanac uses Yoke-native packaged agents for build, ingest, and garden, and the adapter only loads an agent, binds it to a [Yoke Harness](../concepts/yoke-harness), invokes Yoke, and projects normalized results back into CodeAlmanac lifecycle records [@integration-transcript].
+`codealmanac` is the reference product integration for Yoke. Its durable boundary is that `codealmanac` owns wiki lifecycle work, run records, validation, and product events, while Yoke owns the agent definition, provider surface, and harness execution layer [@yoke-only-note]. The current migration contract makes that boundary concrete: `codealmanac` uses Yoke-native packaged agents for build, ingest, and garden, and the adapter only loads an agent, binds it to a [Yoke Harness](../concepts/yoke-harness), invokes Yoke, and projects normalized results back into `codealmanac` lifecycle records [@integration-transcript].
 
 ## Packaged Agents Are The Boundary
 
-CodeAlmanac should treat Yoke's folder model as the agent-definition boundary. The integration contract says the product has one Yoke collection with three agent packages: `build`, `ingest`, and `garden`; each package owns `agent.yaml` and `instructions.md` [@integration-transcript]. That shape follows the [Agent Folders](../concepts/agent-folders) contract: tools, permissions, model hints, skills, subagents, and workflows live in the package files rather than in an adapter-specific manifest.
+`codealmanac` should treat Yoke's folder model as the agent-definition boundary. The integration contract says the product has one Yoke collection with three agent packages: `build`, `ingest`, and `garden`; each package owns `agent.yaml` and `instructions.md` [@integration-transcript]. That shape follows the [Agent Folders](../concepts/agent-folders) contract: tools, permissions, model hints, skills, subagents, and workflows live in the package files rather than in an adapter-specific manifest.
 
 Stable instructions belong in `instructions.md`. Per-run prompts should contain only typed runtime context JSON, so the product can vary the selected source material without rebuilding the agent's stable operating procedure [@integration-transcript]. Future durable skills, subagents, and workflows should be added under the Yoke-native `skills/`, `subagents/`, and `workflows/` folders inside the relevant package [@integration-transcript].
 
 ## Adapter Responsibility
 
-The adapter should not recreate provider orchestration in CodeAlmanac. The earlier Yoke-only note removed direct Claude and Codex adapter packages from CodeAlmanac and kept the product path as `usealmanac -> CodeAlmanac lifecycle -> Yoke -> Claude/Codex` [@yoke-only-note]. The final migration contract tightens the same rule: select one typed agent kind, load the packaged agent, run Yoke, and translate Yoke events/results into Almanac lifecycle records [@integration-transcript].
+The adapter should not recreate provider orchestration in `codealmanac`. The earlier Yoke-only note removed direct Claude and Codex adapter packages from the product and kept the lifecycle path as `codealmanac -> Yoke -> Claude/Codex` [@yoke-only-note]. The final migration contract tightens the same rule: select one typed agent kind, load the packaged agent, run Yoke, and translate Yoke events/results into `codealmanac` lifecycle records [@integration-transcript].
 
-Agent selection is a required typed enum for `build`, `ingest`, or `garden` [@integration-transcript]. That keeps selection explicit while avoiding a second CodeAlmanac helper-selection pipeline. Native provider behavior, including helper agents on the Codex app-server surface, remains inside the harness path instead of being duplicated in Python product code [@integration-transcript].
+Agent selection is a required typed enum for `build`, `ingest`, or `garden` [@integration-transcript]. That keeps selection explicit while avoiding a second `codealmanac` helper-selection pipeline. Native provider behavior, including helper agents on the Codex app-server surface, remains inside the harness path instead of being duplicated in Python product code [@integration-transcript].
 
 ## Runtime Environment
 
@@ -45,6 +45,6 @@ Provider adapters merge this runtime state at the edge. The Codex app-server ada
 
 ## Release Contract
 
-CodeAlmanac should depend on `almanac-yoke>=0.1.5,<0.2` for this integration shape [@integration-transcript]. Yoke's distribution name is `almanac-yoke`, while the import package remains `yoke` [@package-note]. The referenced migration verified `almanac-yoke 0.1.5` and `codealmanac 0.4.3` as the released pair, with Yoke `main` at `3d40984` and CodeAlmanac `dev` and `main` both at `bd4269e6` [@integration-transcript].
+`codealmanac` should depend on `almanac-yoke>=0.1.5,<0.2` for this integration shape [@integration-transcript]. Yoke's distribution name is `almanac-yoke`, while the import package remains `yoke` [@package-note]. The referenced migration verified `almanac-yoke 0.1.5` and `codealmanac 0.4.3` as the released pair, with Yoke `main` at `3d40984` and the `codealmanac` `dev` and `main` branches both at `bd4269e6` [@integration-transcript].
 
-The live proof matters because it exercised the intended boundary: a real CodeAlmanac build ran through the packaged build agent and Codex app-server, created and validated 13 grounded pages, used native Codex helper agents dynamically, committed cleanly, and emitted readable normalized lifecycle events [@integration-transcript].
+The live proof matters because it exercised the intended boundary: a real `codealmanac` build ran through the packaged build agent and Codex app-server, created and validated 13 grounded pages, used native Codex helper agents dynamically, committed cleanly, and emitted readable normalized lifecycle events [@integration-transcript].

@@ -54,6 +54,6 @@ A harness is not itself an agent. The agent is the portable definition: instruct
 
 ## What it prevents
 
-The harness prevents product code from importing provider SDK objects as its main abstraction. The reference shows a product-facing `HarnessTask` model that turns app inputs into `Agent`, `RunOptions`, and `Harness("codex:app", ...)`, keeping Claude or Codex SDK objects outside the app service boundary [@reference]. [CodeAlmanac Integration](../architecture/codealmanac-integration) is the concrete product example: CodeAlmanac loads packaged Yoke agents and projects Yoke events/results instead of owning direct Claude or Codex orchestration.
+The harness prevents product code from importing provider SDK objects as its main abstraction. The reference shows a product-facing `HarnessTask` model that turns app inputs into `Agent`, `RunOptions`, and `Harness("codex:app", ...)`, keeping Claude or Codex SDK objects outside the app service boundary [@reference]. [codealmanac Integration](../architecture/codealmanac-integration) is the concrete product example: `codealmanac` loads packaged Yoke agents and projects Yoke events/results instead of owning direct Claude or Codex orchestration.
 
 It also prevents generic provider assumptions. The harness may accept a provider-level default for ergonomics, but planning and execution resolve to a concrete surface before capability checks matter [@models].
