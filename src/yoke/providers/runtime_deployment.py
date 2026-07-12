@@ -278,7 +278,13 @@ def _write_opencode(agent: Agent, deployment: RuntimeDeployment) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(file.text)
         wrote_agents = True
-    if wrote_skills or wrote_agents:
+    wrote_plugins = False
+    for name, source in _opencode_plugin_sources(agent).items():
+        path = config_dir / "plugin" / f"{slug(name)}.js"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source)
+        wrote_plugins = True
+    if wrote_skills or wrote_agents or wrote_plugins:
         deployment.opencode_config_dir = config_dir
     mcp_servers = option_mapping(agent, "mcp_servers")
     if mcp_servers:
@@ -287,6 +293,27 @@ def _write_opencode(agent: Agent, deployment: RuntimeDeployment) -> None:
         # at OpenCode's highest precedence, so this doesn't collide with the
         # skills directory above or clobber a real project's opencode.json.
         deployment.opencode_config_content = json.dumps({"mcp": mcp_servers})
+
+
+def _opencode_plugin_sources(agent: Agent) -> dict[str, str]:
+    """Return caller-supplied OpenCode plugin JS source, keyed by name.
+
+    Pure pass-through, same as mcp_servers: Yoke does not generate this
+    plugin's contents, only writes what `agent.options["opencode_plugins"]`
+    already contains into a file OpenCode auto-loads. The *generated*
+    tool.execute.before hook plugin (OpencodeHookBridge,
+    providers/opencode/hooks.py) is a different, session-options-driven
+    mechanism and writes its own separate file into the same directory.
+    """
+
+    value = agent.options.get("opencode_plugins")
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(name): source
+        for name, source in value.items()
+        if isinstance(name, str) and isinstance(source, str)
+    }
 
 
 def _write_skills(

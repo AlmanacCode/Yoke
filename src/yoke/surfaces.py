@@ -670,6 +670,12 @@ FEATURE_EVIDENCE: dict[tuple[Provider, str, Feature], tuple[str, ...]] = {
         "https://opencode.ai/docs/mcp-servers/",
         "https://opencode.ai/docs/config/",
     ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.PLUGINS): (
+        "https://opencode.ai/docs/plugins/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.HOOKS): (
+        "https://opencode.ai/docs/plugins/",
+    ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.PERMISSIONS): (
         "https://opencode.ai/docs/server/",
     ),
@@ -882,6 +888,19 @@ FEATURE_LOWERING: dict[tuple[Provider, str, Feature], str] = {
         "and passes it via OPENCODE_CONFIG_CONTENT, OpenCode's highest-"
         "precedence config source. OpenCode has no runtime add-server "
         "endpoint, so servers must be known before the session starts."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.PLUGINS): (
+        "agent.options['opencode_plugins'] (name -> raw JS source) writes "
+        "plugin/<name>.js files under OPENCODE_CONFIG_DIR; Yoke passes the "
+        "source through unmodified rather than generating or validating it."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.HOOKS): (
+        "A generated tool.execute.before plugin calls a local HTTP bridge "
+        "(OpencodeHookBridge) that resolves each tool call through "
+        "ProviderOptions.opencode.request_handler/policy, the same "
+        "RequestPolicy/Response contract used for permissions — confirmed "
+        "live that argument mutation (Response.updated_input) and denial "
+        "both change what actually runs, not just what's reported."
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.PERMISSIONS): (
         "Permissions.approval=ASK passes an ask-all session permission "
@@ -1789,11 +1808,22 @@ MATRIX: dict[tuple[Provider, str], Capabilities] = {
                 "user's real project.",
             ),
             Feature.PLUGINS: (
-                Support.UNSUPPORTED,
-                "OpenCode plugins are a separate JS extension mechanism, not "
-                "modeled by Yoke.",
+                Support.COMPILED,
+                "agent.options['opencode_plugins'] (name -> raw JS source) "
+                "compiles into plugin/<name>.js files under the same "
+                "OPENCODE_CONFIG_DIR skills/agents use — pure pass-through, "
+                "Yoke does not generate or validate the plugin's contents.",
             ),
-            Feature.HOOKS: Support.UNSUPPORTED,
+            Feature.HOOKS: (
+                Support.COMPILED,
+                "A generated tool.execute.before plugin (OpencodeHookBridge) "
+                "relays each tool call to a local HTTP bridge, resolved via "
+                "ProviderOptions.opencode.request_handler/policy — confirmed "
+                "live: argument mutation and denial both actually change "
+                "what runs. Deployed only when a handler/policy is "
+                "configured at session start; RunOptions.provider.opencode "
+                "set later per-turn does not retroactively enable it.",
+            ),
             Feature.MCP: (
                 Support.COMPILED,
                 "agent.options['mcp_servers'] compiles into an "

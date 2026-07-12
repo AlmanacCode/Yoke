@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -28,6 +28,7 @@ from yoke.models import (
     Permissions,
     Provider,
     Readiness,
+    Response,
     Run,
     RunStatus,
     Session,
@@ -53,6 +54,11 @@ from yoke.providers.opencode import http
 from yoke.providers.opencode.db import query_readonly_or_empty
 from yoke.providers.opencode.failures import classify_opencode_failure
 from yoke.providers.opencode.fields import JsonObject, as_record, string_field
+from yoke.providers.opencode.hooks import (
+    OPENCODE_HOOK_PLUGIN_SOURCE,
+    OpencodeHookBridge,
+)
+from yoke.providers.opencode.hooks import resolve as resolve_hook_request
 from yoke.providers.opencode.parts import final_text_from_parts
 from yoke.providers.opencode.permissions import OpencodePermissionWatchdog
 from yoke.providers.opencode.process import (
@@ -119,6 +125,11 @@ class _OpencodeSession:
     # thread.provider_options): a later turn's RunOptions.provider.opencode
     # overrides this, but falls back here when a turn doesn't set one.
     provider_options: OpencodeOptions | dict[str, object] | None = None
+    # Set for the duration of one _send() call so a live tool.execute.before
+    # hook (OpencodeHookBridge — a long-lived, process-scoped server that
+    # outlives any one turn) can still emit its resolved event into whatever
+    # turn is currently in flight. None between turns and while idle.
+    current_emit: Callable[[Event], None] | None = None
 
 
 class OpencodeServer:
@@ -153,14 +164,30 @@ class OpencodeServer:
         # not whichever session happens to close first. Mirrors
         # CodexAppServer's own _deployments keyed by id(process).
         self._deployments: dict[int, RuntimeDeployment] = {}
+        # Same id(process) keying as _deployments: one bridge per process,
+        # shared across forks, torn down alongside the deployment.
+        self._hook_bridges: dict[int, OpencodeHookBridge] = {}
 
     async def check(self, harness: Harness) -> Readiness:
         return await asyncio.to_thread(self._check, harness.cwd, harness.environment)
 
     async def run(self, harness: Harness, prompt: str, options: RunOptions) -> Run:
+        # Regression: provider (needed to deploy the tool-hook bridge —
+        # OpencodeHookBridge only ever reads session-creation-time options,
+        # see _maybe_deploy_hook_bridge) was dropped here, matching neither
+        # CodexAppServer.run() nor this adapter's own per-turn permission
+        # resolution, which does see RunOptions.provider via
+        # opencode_options_for_run() in _send().
         session = await self.start(
             harness,
-            SessionOptions(model=options.model, permissions=options.permissions),
+            SessionOptions(
+                model=options.model,
+                goal=options.goal,
+                inherit_goal=options.inherit_goal,
+                effort=options.effort,
+                permissions=options.permissions,
+                provider=options.provider,
+            ),
         )
         try:
             return await self.send(session, Turn(prompt=prompt), options)
@@ -445,6 +472,9 @@ class OpencodeServer:
             deployment = self._deployments.pop(key, None)
             if deployment is not None:
                 deployment.cleanup()
+            bridge = self._hook_bridges.pop(key, None)
+            if bridge is not None:
+                bridge.stop()
             return
         self._process_refs[key] = count - 1
 
@@ -614,10 +644,16 @@ class OpencodeServer:
         deployment: RuntimeDeployment,
     ) -> _OpencodeSession:
         environment = dict(harness.environment)
+        # May set deployment.opencode_config_dir for the first time (no
+        # skills/agents/MCP configured, only hooks) — run before the
+        # OPENCODE_CONFIG_DIR check below so it's picked up either way.
+        hook_bridge = self._maybe_deploy_hook_bridge(options, deployment)
         if deployment.opencode_config_dir is not None:
             environment["OPENCODE_CONFIG_DIR"] = str(deployment.opencode_config_dir)
         if deployment.opencode_config_content is not None:
             environment["OPENCODE_CONFIG_CONTENT"] = deployment.opencode_config_content
+        if hook_bridge is not None:
+            environment["YOKE_HOOK_BRIDGE_URL"] = hook_bridge.base_url
         server = start_opencode_server(
             self.command,
             harness.cwd,
@@ -639,7 +675,11 @@ class OpencodeServer:
                 raise OpencodeServerStartupError("opencode did not return a session id")
         except Exception:
             server.terminate()
+            if hook_bridge is not None:
+                hook_bridge.stop()
             raise
+        if hook_bridge is not None:
+            self._hook_bridges[id(server)] = hook_bridge
         return _OpencodeSession(
             process=server,
             session_id=session_id,
@@ -649,6 +689,47 @@ class OpencodeServer:
             instructions=harness.agent.instructions,
             provider_options=opencode_options(options),
         )
+
+    def _maybe_deploy_hook_bridge(
+        self,
+        options: SessionOptions,
+        deployment: RuntimeDeployment,
+    ) -> OpencodeHookBridge | None:
+        """Deploy the tool.execute.before hook plugin, only if opted into.
+
+        No caller-configured request_handler/policy means no plugin file
+        and no bridge server — zero overhead for sessions that don't use
+        hooks, matching how MCP/skills/agents only ever write files a
+        caller's Agent actually asked for.
+        """
+
+        handler = opencode_request_handler(opencode_options(options))
+        if handler is None:
+            return None
+        config_dir = deployment.root / "opencode_config"
+        plugin_path = config_dir / "plugin" / "yoke_tool_hook.js"
+        plugin_path.parent.mkdir(parents=True, exist_ok=True)
+        plugin_path.write_text(OPENCODE_HOOK_PLUGIN_SOURCE)
+        deployment.opencode_config_dir = config_dir
+        bridge = OpencodeHookBridge(resolve=self._resolve_hook_request)
+        bridge.start()
+        return bridge
+
+    def _resolve_hook_request(self, session_id: str, payload: JsonObject) -> Response:
+        internal = self._sessions.get(session_id)
+        handler = (
+            opencode_request_handler(internal.provider_options)
+            if internal is not None
+            else None
+        )
+        event, response = resolve_hook_request(payload, handler)
+        if internal is not None and internal.current_emit is not None:
+            internal.current_emit(
+                event.model_copy(
+                    update={"kind": EventKind.REQUEST_RESOLVED, "response": response}
+                )
+            )
+        return response
 
     def _resolve_db_path(self) -> Path:
         if self._db_path_override is not None:
@@ -678,6 +759,29 @@ class OpencodeServer:
             if on_event is not None:
                 on_event(event)
 
+        # Lets a live tool.execute.before hook call (OpencodeHookBridge,
+        # providers/opencode/hooks.py) emit its resolved event into *this*
+        # turn's stream — the bridge is a long-lived, process-scoped server
+        # (env-var-addressed at process spawn, shared across forks), so it
+        # can't bind to one turn's `emit` closure at construction time.
+        internal.current_emit = emit
+        try:
+            return self._send_turn(
+                internal, prompt, provider_id, model_id, options, emit, events
+            )
+        finally:
+            internal.current_emit = None
+
+    def _send_turn(
+        self,
+        internal: _OpencodeSession,
+        prompt: str,
+        provider_id: str,
+        model_id: str,
+        options: RunOptions,
+        emit: Callable[[Event], None],
+        events: list,
+    ) -> Run:
         # Emitted first and unconditionally, matching CodexAppServer's
         # _send(): Run.provider_session_id scans events in reverse for the
         # first one carrying provider_session_id, so callers (e.g.

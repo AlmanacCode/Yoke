@@ -47,6 +47,42 @@ def test_opencode_runtime_skips_config_dir_without_skills(tmp_path: Path) -> Non
         deployment.cleanup()
 
 
+def test_opencode_runtime_writes_caller_supplied_plugin_source(
+    tmp_path: Path,
+) -> None:
+    agent = Agent(
+        instructions="x",
+        options={
+            "opencode_plugins": {
+                "my_plugin": "export const MyPlugin = async () => ({});"
+            }
+        },
+    )
+    deployment = deploy_runtime(agent, "opencode", tmp_path)
+    try:
+        assert deployment.opencode_config_dir is not None
+        plugin_path = deployment.opencode_config_dir / "plugin" / "my_plugin.js"
+        assert plugin_path.is_file()
+        assert plugin_path.read_text() == "export const MyPlugin = async () => ({});"
+    finally:
+        deployment.cleanup()
+
+
+def test_opencode_runtime_ignores_non_string_plugin_entries(tmp_path: Path) -> None:
+    agent = Agent(
+        instructions="x",
+        options={"opencode_plugins": {"bad": 123, "ok": "export const X = 1;"}},
+    )
+    deployment = deploy_runtime(agent, "opencode", tmp_path)
+    try:
+        assert deployment.opencode_config_dir is not None
+        plugin_dir = deployment.opencode_config_dir / "plugin"
+        assert not (plugin_dir / "bad.js").exists()
+        assert (plugin_dir / "ok.js").is_file()
+    finally:
+        deployment.cleanup()
+
+
 def test_opencode_runtime_compiles_mcp_servers_into_config_content(
     tmp_path: Path,
 ) -> None:
