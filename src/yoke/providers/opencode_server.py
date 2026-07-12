@@ -602,6 +602,8 @@ class OpencodeServer:
         environment = dict(harness.environment)
         if deployment.opencode_config_dir is not None:
             environment["OPENCODE_CONFIG_DIR"] = str(deployment.opencode_config_dir)
+        if deployment.opencode_config_content is not None:
+            environment["OPENCODE_CONFIG_CONTENT"] = deployment.opencode_config_content
         server = start_opencode_server(
             self.command,
             harness.cwd,

@@ -861,9 +861,10 @@ FEATURE_LOWERING: dict[tuple[Provider, str, Feature], str] = {
         "SSE stream was found unreliable for this in a prior live spike."
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.MCP): (
-        "Not yet implemented: OpenCode has no runtime add-server endpoint, "
-        "and this adapter does not compile Yoke MCP config into OpenCode's "
-        "OPENCODE_CONFIG_CONTENT/OPENCODE_CONFIG_DIR config file."
+        "Yoke renders agent.options['mcp_servers'] as {\"mcp\": {...}} JSON "
+        "and passes it via OPENCODE_CONFIG_CONTENT, OpenCode's highest-"
+        "precedence config source. OpenCode has no runtime add-server "
+        "endpoint, so servers must be known before the session starts."
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.PERMISSIONS): (
         "Session creation always passes an allow-all permission block; there "
@@ -1752,11 +1753,11 @@ MATRIX: dict[tuple[Provider, str], Capabilities] = {
             ),
             Feature.HOOKS: Support.UNSUPPORTED,
             Feature.MCP: (
-                Support.UNSUPPORTED,
-                "OpenCode reads MCP servers from OPENCODE_CONFIG_CONTENT/"
-                "OPENCODE_CONFIG_DIR config, but this adapter does not yet "
-                "compile Yoke MCP config into that file — no runtime "
-                "add-server API exists either.",
+                Support.COMPILED,
+                "agent.options['mcp_servers'] compiles into an "
+                "OPENCODE_CONFIG_CONTENT env var (`{\"mcp\": {...}}`), merged "
+                "over the user's own opencode.json at OpenCode's highest "
+                "config precedence — no runtime add-server API exists.",
             ),
             Feature.GOAL: Support.UNSUPPORTED,
             Feature.GOAL_LOOP: Support.UNSUPPORTED,

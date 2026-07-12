@@ -7,6 +7,7 @@ import pytest
 
 from yoke import Agent, Harness, Skill
 from yoke.options import ForkOptions, SessionOptions
+from yoke.providers.opencode import http
 from yoke.providers.opencode_server import OpencodeServer, _OpencodeSession
 from yoke.providers.runtime_deployment import deploy_runtime
 
@@ -42,6 +43,40 @@ def test_opencode_runtime_skips_config_dir_without_skills(tmp_path: Path) -> Non
     deployment = deploy_runtime(Agent(instructions="none"), "opencode", tmp_path)
     try:
         assert deployment.opencode_config_dir is None
+    finally:
+        deployment.cleanup()
+
+
+def test_opencode_runtime_compiles_mcp_servers_into_config_content(
+    tmp_path: Path,
+) -> None:
+    agent = Agent(
+        instructions="be helpful",
+        options={
+            "mcp_servers": {
+                "docs": {
+                    "type": "remote",
+                    "url": "https://developers.example.com/mcp",
+                }
+            }
+        },
+    )
+    deployment = deploy_runtime(agent, "opencode", tmp_path)
+    try:
+        assert deployment.opencode_config_content == (
+            '{"mcp": {"docs": {"type": "remote", '
+            '"url": "https://developers.example.com/mcp"}}}'
+        )
+    finally:
+        deployment.cleanup()
+
+
+def test_opencode_runtime_skips_config_content_without_mcp_servers(
+    tmp_path: Path,
+) -> None:
+    deployment = deploy_runtime(agent_with_skill(), "opencode", tmp_path)
+    try:
+        assert deployment.opencode_config_content is None
     finally:
         deployment.cleanup()
 
@@ -207,3 +242,46 @@ def test_opencode_fork_carries_over_parent_instructions_marked_as_sent(
         await adapter.close(parent)
 
     asyncio.run(exercise())
+
+
+def test_opencode_start_session_passes_mcp_config_content_env_var(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured_env: dict[str, str] = {}
+
+    def fake_start_opencode_server(command, cwd, timeout, env=None):
+        captured_env.update(env or {})
+        return FakeOpencodeProcess()
+
+    monkeypatch.setattr(
+        "yoke.providers.opencode_server.start_opencode_server",
+        fake_start_opencode_server,
+    )
+    monkeypatch.setattr(
+        http, "create_session", lambda *args, **kwargs: {"id": "ses_test"}
+    )
+
+    agent = Agent(
+        instructions="be helpful",
+        options={
+            "mcp_servers": {
+                "docs": {"type": "remote", "url": "https://example.com/mcp"}
+            }
+        },
+    )
+    deployment = deploy_runtime(agent, "opencode", tmp_path)
+    try:
+        harness = Harness(
+            provider="opencode",
+            agent=agent,
+            cwd=tmp_path / "workspace",
+        )
+        adapter = OpencodeServer()
+        adapter._start_session(harness, SessionOptions(), deployment)
+        assert (
+            captured_env["OPENCODE_CONFIG_CONTENT"]
+            == deployment.opencode_config_content
+        )
+    finally:
+        deployment.cleanup()

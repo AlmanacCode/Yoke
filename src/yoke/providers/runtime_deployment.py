@@ -16,6 +16,7 @@ from yoke.providers.codex_agents import (
     codex_agent_toml,
     description_for,
     instructions_for,
+    option_mapping,
     slug,
 )
 from yoke.providers.codex_app.prompts import native_subagents
@@ -42,6 +43,7 @@ class RuntimeDeployment:
     claude_plugin_root: Path | None = None
     claude_plugin_name: str | None = None
     opencode_config_dir: Path | None = None
+    opencode_config_content: str | None = None
 
     def cleanup(self) -> None:
         """Remove only this deployment, never authored files."""
@@ -267,9 +269,15 @@ def _write_opencode(agent: Agent, deployment: RuntimeDeployment) -> None:
     # project, unlike a naive `.opencode/skills/` write into harness.cwd.
     config_dir = deployment.root / "opencode_config"
     skills = config_dir / "skills"
-    if not _write_skills(inline_skills(agent), Provider.OPENCODE, skills):
-        return
-    deployment.opencode_config_dir = config_dir
+    if _write_skills(inline_skills(agent), Provider.OPENCODE, skills):
+        deployment.opencode_config_dir = config_dir
+    mcp_servers = option_mapping(agent, "mcp_servers")
+    if mcp_servers:
+        # Inline config, not a file: OPENCODE_CONFIG_CONTENT is merged over
+        # every other config source (global, project, OPENCODE_CONFIG_DIR)
+        # at OpenCode's highest precedence, so this doesn't collide with the
+        # skills directory above or clobber a real project's opencode.json.
+        deployment.opencode_config_content = json.dumps({"mcp": mcp_servers})
 
 
 def _write_skills(
