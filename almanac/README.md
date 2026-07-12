@@ -12,6 +12,8 @@ runtime, authoring, provider-surface, and product-integration boundaries.
 
 ## Where to start
 
+For a compact map of the vocabulary, read [Concepts](concepts).
+
 Start with [Yoke Harness](concepts/yoke-harness). It is the central abstraction
 that binds an agent definition to a Claude or Codex surface.
 
