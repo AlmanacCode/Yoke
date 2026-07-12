@@ -21,6 +21,12 @@ sources:
   - id: capability-tests
     type: file
     path: tests/test_capabilities.py
+  - id: opencode-server
+    type: file
+    path: src/yoke/providers/opencode_server.py
+  - id: opencode-plan
+    type: file
+    path: docs/plans/2026-07-11-opencode-provider.md
 ---
 
 Provider surfaces are the concrete Claude or Codex entrypoints that Yoke plans against. A provider is the family, such as `codex` or `claude`; a surface is the actual exposure path, such as `codex_app_server`, `codex_python_sdk`, `codex_cli`, or `claude_python_sdk` [@models]. Surfaces matter because Yoke treats features as surface-specific, not provider-wide [@decision].
@@ -52,3 +58,11 @@ Run event callbacks show the planning rule in a small form. `RunOptions(on_event
 Provider surfaces are not a cosmetic naming scheme. They control whether a [Yoke Harness](yoke-harness) may run, stream, resume, fork, use workflows, expose request callbacks, or report a feature as unavailable. The capability matrix answers what the surface can do before the provider turn starts [@surfaces].
 
 This is why the decision note calls provider surfaces first-class. A generic provider default is acceptable for simple use, but advanced behavior must resolve to a concrete surface before Yoke claims that a feature exists [@decision].
+
+## OpenCode: a third provider with no Python SDK
+
+`opencode_server` is Yoke's third provider surface, alongside Claude and Codex [@models]. Unlike either of those, OpenCode ships no Python SDK — the adapter spawns `opencode serve --port 0` as a child process and drives it entirely over its documented HTTP API [@opencode-server]. That makes it closer in shape to `codex_app_server` (a locally spawned, long-lived process) than to a Python-SDK surface, and it reuses the same design precedent: the process/HTTP/polling mechanics stay synchronous and thread-backed, and the async `ProviderAdapter` methods bridge to them with `asyncio.to_thread` rather than a from-scratch asyncio rewrite [@opencode-server].
+
+OpenCode's own SSE event stream was found unreliable for live progress narration in a prior live spike, so this adapter instead polls OpenCode's own SQLite database for new session parts while a turn is in flight, and uses the same polling loop to detect a tool call stuck past a threshold — a confirmed upstream OpenCode reliability gap, not a Yoke bug [@opencode-plan]. Because that live-progress channel is DB-polling rather than SSE, there is also no polling-discoverable "pending permission" signal: session creation always passes an allow-all permission block, and `PERMISSIONS`/`REQUEST_EVENTS` are declared `compiled`/`unsupported` rather than `native`, honestly reflecting that a live interactive approval loop isn't wired [@opencode-plan].
+
+Sessions are first-class on this surface, not a one-shot-only wrapper — OpenCode's HTTP API supports real `GET /session`, `PATCH /session/:id`, `POST /session/:id/fork`, and `POST /session/:id/summarize` endpoints, so `start`/`send`/`close` map onto genuine multi-turn sessions and `run()` is a thin convenience wrapper over them [@opencode-server]. A forked session shares its parent's underlying server process rather than spawning a new one, so process termination is reference-counted the same way `CodexAppServer` reference-counts its shared app-server process, rather than tied to whichever session happens to close first [@opencode-server].

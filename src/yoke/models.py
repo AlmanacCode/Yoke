@@ -61,6 +61,7 @@ class Provider(StrEnum):
 
     CLAUDE = "claude"
     CODEX = "codex"
+    OPENCODE = "opencode"
 
 
 class Surface(StrEnum):
@@ -73,6 +74,7 @@ class Surface(StrEnum):
     CODEX_PYTHON_SDK = "codex_python_sdk"
     CODEX_TYPESCRIPT_SDK = "codex_typescript_sdk"
     CODEX_APP_SERVER = "codex_app_server"
+    OPENCODE_SERVER = "opencode_server"
 
 
 class Channel(StrEnum):
@@ -136,6 +138,12 @@ def normalize_provider_surface(provider: object, surface: object) -> object:
             "ts": Surface.CODEX_TYPESCRIPT_SDK,
             "typescript": Surface.CODEX_TYPESCRIPT_SDK,
             "typescript_sdk": Surface.CODEX_TYPESCRIPT_SDK,
+        },
+        Provider.OPENCODE: {
+            "server": Surface.OPENCODE_SERVER,
+            "app": Surface.OPENCODE_SERVER,
+            "app_server": Surface.OPENCODE_SERVER,
+            "http": Surface.OPENCODE_SERVER,
         },
     }
     return aliases[provider_value].get(surface_key, surface_text)
@@ -409,6 +417,7 @@ class Readiness(YokeModel):
     @classmethod
     def normalize_known_surface(cls, value: object) -> object:
         return normalize_surface(value)
+
 
 class Login(YokeModel):
     """Provider login flow result."""
@@ -2401,11 +2410,7 @@ def surface_plan(
         and channel_value is not None
         and profile.channel is not channel_value
     )
-    if (
-        surface is None
-        and required
-        and required != (Feature.GOAL,)
-    ):
+    if surface is None and required and required != (Feature.GOAL,):
         profile = select_profile(
             provider,
             requires=required,

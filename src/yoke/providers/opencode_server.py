@@ -1,0 +1,747 @@
+"""OpenCode provider adapter.
+
+OpenCode has no Python SDK. This surface spawns `opencode serve --port 0` as
+a child process and drives it over HTTP. Following the precedent set by
+`CodexAppServer` (providers/codex_app/process.py), the process/HTTP/DB-
+polling mechanics stay synchronous and thread-backed, and this adapter's
+async `ProviderAdapter` methods bridge to them via `asyncio.to_thread`.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import threading
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from yoke.errors import UnsupportedFeature, YokeError
+from yoke.models import (
+    Event,
+    EventKind,
+    Goal,
+    GoalRun,
+    Harness,
+    Login,
+    Model,
+    Provider,
+    Readiness,
+    Run,
+    RunStatus,
+    Session,
+    SessionHistory,
+    SessionList,
+    SessionMessage,
+    SessionSummary,
+    Surface,
+    Turn,
+    Workflow,
+    WorkflowRun,
+)
+from yoke.options import (
+    ForkOptions,
+    GoalLoopOptions,
+    RunOptions,
+    SessionOptions,
+    WorkflowOptions,
+)
+from yoke.providers.opencode import http
+from yoke.providers.opencode.db import query_readonly_or_empty
+from yoke.providers.opencode.failures import classify_opencode_failure
+from yoke.providers.opencode.fields import JsonObject, as_record, string_field
+from yoke.providers.opencode.parts import final_text_from_parts
+from yoke.providers.opencode.process import (
+    OpencodeServerProcess,
+    OpencodeServerStartupError,
+    start_opencode_server,
+)
+from yoke.providers.opencode.progress import (
+    OPENCODE_POLL_INTERVAL_SECONDS,
+    OPENCODE_STUCK_TOOL_CALL_SECONDS,
+    OpencodeProgressWatchdog,
+    OpencodeStuckToolCallError,
+)
+from yoke.providers.opencode.usage import parse_opencode_usage
+from yoke.providers.runtime_deployment import RuntimeDeployment, deploy_runtime
+from yoke.surfaces import capabilities_for
+from yoke.workflows import native_workflow_unsupported
+
+OPENCODE_COMMAND = "opencode"
+OPENCODE_MODEL_SEPARATOR = "/"
+OPENCODE_CHECK_STARTUP_TIMEOUT_SECONDS = 5.0
+OPENCODE_CHECK_REQUEST_TIMEOUT_SECONDS = 5.0
+OPENCODE_RUN_STARTUP_TIMEOUT_SECONDS = 10.0
+OPENCODE_RUN_REQUEST_TIMEOUT_SECONDS = 900.0
+OPENCODE_NOT_INSTALLED_MESSAGE = "opencode not found on PATH"
+OPENCODE_SERVER_REPAIR = "run `opencode serve` directly to check for a startup error"
+OPENCODE_PROVIDER_REPAIR = (
+    "sign in with `opencode auth login` or configure a provider API key"
+)
+# How long the main thread waits between checks of the watchdog's
+# stuck_reason while the sender thread is still alive.
+OPENCODE_STUCK_CHECK_INTERVAL_SECONDS = 1.0
+
+
+def split_opencode_model(model: str) -> tuple[str, str]:
+    provider_id, separator, model_id = model.partition(OPENCODE_MODEL_SEPARATOR)
+    if separator == "" or provider_id == "" or model_id == "":
+        raise ValueError(f'opencode model must be "provider/model", got: {model!r}')
+    return provider_id, model_id
+
+
+@dataclass
+class _OpencodeSession:
+    process: OpencodeServerProcess
+    session_id: str
+    cwd: Path
+    environment: dict[str, str] | None
+    deployment: RuntimeDeployment | None
+    db_path: Path
+    # Persist across turns so a later send() doesn't re-poll and re-emit an
+    # earlier turn's already-seen parts through on_event.
+    known_sessions: set[str] = field(default_factory=set)
+    seen_part_ids: set[str] = field(default_factory=set)
+    # OpenCode's session/message API has no dedicated system-prompt field
+    # (unlike Claude's system_prompt or Codex app-server's developer
+    # instructions) — Agent.instructions is prepended to the first turn's
+    # prompt text instead. Without this, the model receives only the bare
+    # task prompt and never learns what it's actually supposed to do.
+    instructions: str | None = None
+    instructions_sent: bool = False
+
+
+class OpencodeServer:
+    """Adapter for `opencode serve --port 0`."""
+
+    provider: Provider = "opencode"
+    surface = "opencode_server"
+    capabilities = capabilities_for(provider, surface)
+
+    def __init__(
+        self,
+        command: str = OPENCODE_COMMAND,
+        *,
+        db_path: Path | None = None,
+        poll_interval_seconds: float = OPENCODE_POLL_INTERVAL_SECONDS,
+        stuck_after_seconds: float = OPENCODE_STUCK_TOOL_CALL_SECONDS,
+    ) -> None:
+        self.command = command
+        self._db_path_override = db_path
+        self.poll_interval_seconds = poll_interval_seconds
+        self.stuck_after_seconds = stuck_after_seconds
+        self._sessions: dict[str, _OpencodeSession] = {}
+        # A forked session shares its parent's server process (fork() opens
+        # a new session id on the same running `opencode serve` instance,
+        # not a new process), so termination is reference-counted rather
+        # than tied to any one session — mirrors CodexAppServer's
+        # _retain_process/_release_process.
+        self._process_refs: dict[int, int] = {}
+
+    async def check(self, harness: Harness) -> Readiness:
+        return await asyncio.to_thread(self._check, harness.cwd, harness.environment)
+
+    async def run(self, harness: Harness, prompt: str, options: RunOptions) -> Run:
+        session = await self.start(
+            harness,
+            SessionOptions(model=options.model, permissions=options.permissions),
+        )
+        try:
+            return await self.send(session, Turn(prompt=prompt), options)
+        finally:
+            await self.close(session)
+
+    async def models(self, harness: Harness) -> tuple[Model, ...]:
+        return await asyncio.to_thread(self._models, harness.cwd, harness.environment)
+
+    async def workflow(
+        self,
+        harness: Harness,
+        workflow: Workflow,
+        prompt: str,
+        options: WorkflowOptions,
+    ) -> WorkflowRun:
+        raise native_workflow_unsupported(
+            harness,
+            workflow,
+            options,
+            reason="OpenCode has no documented native workflow DSL.",
+        )
+
+    async def goal_loop(self, harness: Harness, options: GoalLoopOptions) -> GoalRun:
+        raise UnsupportedFeature("OpenCode has no goal-loop concept.")
+
+    async def get_goal(self, session: Session) -> Goal | None:
+        raise UnsupportedFeature("OpenCode has no goal concept.")
+
+    async def set_goal(self, session: Session, goal: Goal) -> Session:
+        raise UnsupportedFeature("OpenCode has no goal concept.")
+
+    async def clear_goal(self, session: Session) -> Session:
+        raise UnsupportedFeature("OpenCode has no goal concept.")
+
+    async def login(
+        self,
+        harness: Harness,
+        method: str,
+        *,
+        api_key: str | None = None,
+    ) -> Login:
+        if method != "api_key" or api_key is None:
+            raise UnsupportedFeature(
+                "OpenCode adapter only wires api_key login (PUT /auth/:id); "
+                "OAuth authorize/callback exists in the API but is not wired "
+                "in this adapter yet."
+            )
+        provider_id = (
+            harness.agent.model.split(OPENCODE_MODEL_SEPARATOR, 1)[0]
+            if (harness.agent.model and OPENCODE_MODEL_SEPARATOR in harness.agent.model)
+            else None
+        )
+        if provider_id is None:
+            raise UnsupportedFeature(
+                "api_key login needs a provider id; set Harness.agent.model to "
+                '"provider/model" first.'
+            )
+        await asyncio.to_thread(
+            self._login, harness.cwd, harness.environment, provider_id, api_key
+        )
+        return Login(
+            provider=self.provider,
+            surface=self.surface,
+            method="api_key",
+            success=True,
+        )
+
+    async def list_sessions(
+        self,
+        harness: Harness,
+        *,
+        limit: int | None = None,
+        cursor: str | None = None,
+        cwd: str | Path | None = None,
+        include_worktrees: bool = True,
+    ) -> SessionList:
+        sessions = await asyncio.to_thread(
+            self._list_sessions, harness.cwd, harness.environment, limit
+        )
+        return SessionList(
+            provider=self.provider, surface=self.surface, sessions=sessions
+        )
+
+    async def read_session(
+        self,
+        harness: Harness,
+        session_id: str,
+        *,
+        include_messages: bool = True,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> SessionHistory:
+        return await asyncio.to_thread(
+            self._read_session,
+            harness.cwd,
+            harness.environment,
+            session_id,
+            include_messages,
+        )
+
+    async def rename(self, session: Session, title: str) -> SessionSummary:
+        internal = self._require_internal(session)
+        record = await asyncio.to_thread(
+            http.rename_session,
+            internal.process.base_url,
+            internal.session_id,
+            title,
+            OPENCODE_CHECK_REQUEST_TIMEOUT_SECONDS,
+        )
+        return _session_summary(record, self.provider, self.surface)
+
+    async def tag(self, session: Session, tag: str | None) -> SessionSummary:
+        raise UnsupportedFeature("OpenCode does not expose a session tag API.")
+
+    async def fork(self, session: Session, options: ForkOptions) -> Session:
+        internal = self._require_internal(session)
+        record = await asyncio.to_thread(
+            http.fork_session,
+            internal.process.base_url,
+            internal.session_id,
+            OPENCODE_CHECK_REQUEST_TIMEOUT_SECONDS,
+            message_id=options.last_turn_id,
+        )
+        forked_id = string_field(record, "id")
+        if forked_id is None:
+            raise YokeError("opencode fork did not return a session id")
+        forked = _OpencodeSession(
+            process=internal.process,
+            session_id=forked_id,
+            cwd=internal.cwd,
+            environment=internal.environment,
+            deployment=None,
+            db_path=internal.db_path,
+        )
+        self._retain_process(internal.process)
+        self._sessions[forked_id] = forked
+        return Session(
+            provider=self.provider,
+            surface=self.surface,
+            id=forked_id,
+            provider_session_id=forked_id,
+            agent=session.agent,
+            cwd=session.cwd,
+            permissions=session.permissions,
+            model=session.model,
+        )
+
+    async def interrupt(self, session: Session) -> None:
+        internal = self._require_internal(session)
+        await asyncio.to_thread(
+            http.abort_session,
+            internal.process.base_url,
+            internal.session_id,
+            OPENCODE_CHECK_REQUEST_TIMEOUT_SECONDS,
+        )
+
+    async def compact(self, session: Session) -> None:
+        internal = self._require_internal(session)
+        if session.model is None:
+            raise YokeError("opencode compact needs a session model to summarize with.")
+        provider_id, model_id = split_opencode_model(session.model)
+        await asyncio.to_thread(
+            http.summarize_session,
+            internal.process.base_url,
+            internal.session_id,
+            provider_id,
+            model_id,
+            OPENCODE_RUN_REQUEST_TIMEOUT_SECONDS,
+        )
+
+    async def start(self, harness: Harness, options: SessionOptions) -> Session:
+        deployment = deploy_runtime(
+            harness.agent, Provider.OPENCODE, harness.runtime_root
+        )
+        try:
+            internal = await asyncio.to_thread(
+                self._start_session, harness, options, deployment
+            )
+        except Exception:
+            deployment.cleanup()
+            raise
+        self._retain_process(internal.process)
+        self._sessions[internal.session_id] = internal
+        return Session(
+            provider=self.provider,
+            surface=self.surface,
+            id=internal.session_id,
+            provider_session_id=internal.session_id,
+            agent=harness.agent,
+            cwd=harness.cwd,
+            permissions=options.permissions
+            or harness.permissions
+            or harness.agent.permissions,
+            model=options.model or harness.agent.model,
+            runtime_root=harness.runtime_root,
+        )
+
+    async def send(self, session: Session, turn: Turn, options: RunOptions) -> Run:
+        internal = self._require_internal(session)
+        model = options.model or turn.model or session.model
+        if model is None:
+            raise YokeError('opencode send needs a model ("provider/model").')
+        return await asyncio.to_thread(self._send, internal, turn, model, options)
+
+    async def close(self, session: Session) -> None:
+        internal = self._sessions.pop(session.id, None)
+        if internal is None:
+            return
+        await asyncio.to_thread(self._release_process, internal.process)
+        if internal.deployment is not None:
+            await asyncio.to_thread(internal.deployment.cleanup)
+
+    # -- synchronous internals, bridged via asyncio.to_thread above --
+
+    def _require_internal(self, session: Session) -> _OpencodeSession:
+        internal = self._sessions.get(session.id)
+        if internal is None:
+            raise YokeError(f"no live opencode session for {session.id!r}")
+        return internal
+
+    def _retain_process(self, process: OpencodeServerProcess) -> None:
+        key = id(process)
+        self._process_refs[key] = self._process_refs.get(key, 0) + 1
+
+    def _release_process(self, process: OpencodeServerProcess) -> None:
+        key = id(process)
+        count = self._process_refs.get(key, 0)
+        if count <= 1:
+            self._process_refs.pop(key, None)
+            process.terminate()
+            return
+        self._process_refs[key] = count - 1
+
+    def _check(self, cwd: Path, environment: dict[str, str]) -> Readiness:
+        try:
+            with self._brief_server(cwd, environment) as server:
+                providers = http.get_providers(
+                    server.base_url, OPENCODE_CHECK_REQUEST_TIMEOUT_SECONDS
+                )
+        except FileNotFoundError:
+            return Readiness(
+                provider=self.provider,
+                surface=self.surface,
+                available=False,
+                message=OPENCODE_NOT_INSTALLED_MESSAGE,
+                fix="Install OpenCode: npm install -g opencode-ai",
+            )
+        except OpencodeServerStartupError as error:
+            return Readiness(
+                provider=self.provider,
+                surface=self.surface,
+                available=False,
+                message=str(error),
+                fix=OPENCODE_SERVER_REPAIR,
+            )
+        if len(providers) == 0:
+            return Readiness(
+                provider=self.provider,
+                surface=self.surface,
+                available=False,
+                message="no opencode providers are configured",
+                fix=OPENCODE_PROVIDER_REPAIR,
+            )
+        names = ", ".join(
+            string_field(item, "name") or string_field(item, "id") or "provider"
+            for item in providers
+        )
+        return Readiness(
+            provider=self.provider,
+            surface=self.surface,
+            available=True,
+            message=f"opencode providers configured: {names}",
+        )
+
+    def _models(self, cwd: Path, environment: dict[str, str]) -> tuple[Model, ...]:
+        with self._brief_server(cwd, environment) as server:
+            providers = http.get_providers(
+                server.base_url, OPENCODE_CHECK_REQUEST_TIMEOUT_SECONDS
+            )
+        models: list[Model] = []
+        for provider in providers:
+            provider_id = string_field(provider, "id")
+            if provider_id is None:
+                continue
+            entries = provider.get("models")
+            model_ids = _model_ids(entries)
+            for model_id in model_ids:
+                models.append(Model(id=f"{provider_id}/{model_id}", raw=provider))
+        return tuple(models)
+
+    def _brief_server(self, cwd: Path, environment: dict[str, str]):
+        return start_opencode_server(
+            self.command,
+            cwd,
+            OPENCODE_CHECK_STARTUP_TIMEOUT_SECONDS,
+            env=environment,
+        )
+
+    def _login(
+        self,
+        cwd: Path,
+        environment: dict[str, str],
+        provider_id: str,
+        api_key: str,
+    ) -> None:
+        server = start_opencode_server(
+            self.command,
+            cwd,
+            OPENCODE_CHECK_STARTUP_TIMEOUT_SECONDS,
+            env=environment,
+        )
+        try:
+            http.set_auth(
+                server.base_url,
+                provider_id,
+                api_key,
+                OPENCODE_CHECK_REQUEST_TIMEOUT_SECONDS,
+            )
+        finally:
+            server.terminate()
+
+    def _list_sessions(
+        self,
+        cwd: Path,
+        environment: dict[str, str],
+        limit: int | None,
+    ) -> tuple[SessionSummary, ...]:
+        server = start_opencode_server(
+            self.command,
+            cwd,
+            OPENCODE_RUN_STARTUP_TIMEOUT_SECONDS,
+            env=environment,
+        )
+        try:
+            records = http.list_sessions(
+                server.base_url, OPENCODE_RUN_REQUEST_TIMEOUT_SECONDS
+            )
+        finally:
+            server.terminate()
+        if limit is not None:
+            records = records[:limit]
+        return tuple(
+            _session_summary(record, self.provider, self.surface) for record in records
+        )
+
+    def _read_session(
+        self,
+        cwd: Path,
+        environment: dict[str, str],
+        session_id: str,
+        include_messages: bool,
+    ) -> SessionHistory:
+        server = start_opencode_server(
+            self.command,
+            cwd,
+            OPENCODE_RUN_STARTUP_TIMEOUT_SECONDS,
+            env=environment,
+        )
+        try:
+            record = http.read_session(
+                server.base_url, session_id, OPENCODE_RUN_REQUEST_TIMEOUT_SECONDS
+            )
+        finally:
+            server.terminate()
+        summary = _session_summary(record, self.provider, self.surface)
+        messages: tuple[SessionMessage, ...] = ()
+        if include_messages:
+            db_path = self._resolve_db_path()
+            rows = query_readonly_or_empty(
+                db_path,
+                "SELECT message.id AS id, message.data AS message_data "
+                "FROM message WHERE message.session_id = ? "
+                "ORDER BY message.time_created",
+                (session_id,),
+            )
+            messages = tuple(
+                SessionMessage(
+                    provider=self.provider,
+                    surface=self.surface,
+                    session_id=session_id,
+                    id=row["id"],
+                    raw=row["message_data"],
+                )
+                for row in rows
+            )
+        return SessionHistory(
+            provider=self.provider,
+            surface=self.surface,
+            session=summary,
+            messages=messages,
+        )
+
+    def _start_session(
+        self,
+        harness: Harness,
+        options: SessionOptions,
+        deployment: RuntimeDeployment,
+    ) -> _OpencodeSession:
+        environment = dict(harness.environment)
+        if deployment.opencode_config_dir is not None:
+            environment["OPENCODE_CONFIG_DIR"] = str(deployment.opencode_config_dir)
+        server = start_opencode_server(
+            self.command,
+            harness.cwd,
+            OPENCODE_RUN_STARTUP_TIMEOUT_SECONDS,
+            env=environment,
+        )
+        try:
+            record = http.create_session(
+                server.base_url,
+                str(harness.cwd),
+                harness.agent.description or "yoke run",
+                OPENCODE_RUN_REQUEST_TIMEOUT_SECONDS,
+                allow_all_permissions=_allow_all(options),
+            )
+            session_id = string_field(record, "id")
+            if session_id is None:
+                raise OpencodeServerStartupError("opencode did not return a session id")
+        except Exception:
+            server.terminate()
+            raise
+        return _OpencodeSession(
+            process=server,
+            session_id=session_id,
+            cwd=harness.cwd,
+            environment=environment or None,
+            deployment=deployment,
+            db_path=self._resolve_db_path(),
+            instructions=harness.agent.instructions,
+        )
+
+    def _resolve_db_path(self) -> Path:
+        if self._db_path_override is not None:
+            return self._db_path_override
+        # Fixed, HOME-relative path confirmed live in the CodeAlmanac spike
+        # this adapter is ported from (2026-07-08) — not affected by
+        # OPENCODE_CONFIG_DIR, which only relocates skill/agent discovery.
+        return Path.home() / ".local" / "share" / "opencode" / "opencode.db"
+
+    def _send(
+        self,
+        internal: _OpencodeSession,
+        turn: Turn,
+        model: str,
+        options: RunOptions,
+    ) -> Run:
+        provider_id, model_id = split_opencode_model(model)
+        prompt = turn.prompt
+        if internal.instructions and not internal.instructions_sent:
+            prompt = f"{internal.instructions}\n\n---\n\n{turn.prompt}"
+            internal.instructions_sent = True
+        events: list = []
+        on_event = options.on_event
+
+        def emit(event) -> None:
+            events.append(event)
+            if on_event is not None:
+                on_event(event)
+
+        # Emitted first and unconditionally, matching CodexAppServer's
+        # _send(): Run.provider_session_id scans events in reverse for the
+        # first one carrying provider_session_id, so callers (e.g.
+        # CodeAlmanac's transcript-ref linking) depend on this existing at
+        # all, not just on Session.provider_session_id being set.
+        emit(
+            Event(
+                kind=EventKind.PROVIDER_SESSION,
+                surface=Surface.OPENCODE_SERVER,
+                message=f"opencode provider session {internal.session_id}",
+                provider_session_id=internal.session_id,
+            )
+        )
+
+        watchdog = OpencodeProgressWatchdog(
+            db_path=internal.db_path,
+            root_session_id=internal.session_id,
+            on_event=emit,
+            poll_interval_seconds=self.poll_interval_seconds,
+            stuck_after_seconds=self.stuck_after_seconds,
+            known_sessions=internal.known_sessions,
+            seen_part_ids=internal.seen_part_ids,
+        )
+        stop_event = threading.Event()
+        watchdog_thread = threading.Thread(
+            target=watchdog.run, args=(stop_event,), daemon=True
+        )
+        watchdog_thread.start()
+
+        message_result: dict[str, JsonObject | Exception] = {}
+
+        def _post() -> None:
+            try:
+                message_result["response"] = http.post_message(
+                    internal.process.base_url,
+                    internal.session_id,
+                    str(internal.cwd),
+                    provider_id,
+                    model_id,
+                    prompt,
+                    options.timeout_seconds or OPENCODE_RUN_REQUEST_TIMEOUT_SECONDS,
+                )
+            except Exception as error:  # noqa: BLE001 - surfaced below
+                message_result["error"] = error
+
+        sender_thread = threading.Thread(target=_post, daemon=True)
+        sender_thread.start()
+
+        while sender_thread.is_alive():
+            if watchdog.stuck_reason is not None:
+                # Unwinds and terminates the server below, killing the
+                # connection the sender thread is blocked on.
+                stop_event.set()
+                internal.process.terminate()
+                failure = classify_opencode_failure(
+                    str(OpencodeStuckToolCallError(watchdog.stuck_reason))
+                )
+                return Run(
+                    provider=self.provider,
+                    surface=self.surface,
+                    status=RunStatus.FAILED,
+                    output=failure.message,
+                    events=tuple(events),
+                    failure=failure,
+                )
+            sender_thread.join(timeout=OPENCODE_STUCK_CHECK_INTERVAL_SECONDS)
+
+        stop_event.set()
+        watchdog_thread.join(timeout=self.poll_interval_seconds * 2 + 5)
+
+        if "error" in message_result:
+            error = message_result["error"]
+            failure = classify_opencode_failure(str(error))
+            return Run(
+                provider=self.provider,
+                surface=self.surface,
+                status=RunStatus.FAILED,
+                output=failure.message,
+                events=tuple(events),
+                failure=failure,
+            )
+        response = as_record(message_result["response"])
+        info = as_record(response.get("info"))
+        raw_parts = response.get("parts")
+        parts = (
+            [as_record(part) for part in raw_parts]
+            if isinstance(raw_parts, list)
+            else []
+        )
+        text = final_text_from_parts(parts)
+        usage = parse_opencode_usage(info.get("tokens"))
+        return Run(
+            provider=self.provider,
+            surface=self.surface,
+            status=RunStatus.SUCCEEDED,
+            output=text or "opencode completed",
+            events=tuple(events),
+            usage=usage,
+        )
+
+
+def _allow_all(options: SessionOptions) -> bool:
+    """Whether to pass OpenCode's blanket allow-all permission block.
+
+    Always true today: there is no polling-discoverable "pending permission"
+    signal without SSE (see the opencode provider plan's capability table),
+    so `Approval.ASK` cannot be honored with a live interactive response.
+    This is a named seam so a future SSE-backed approval loop has one call
+    site to change, not a scattered `True` literal.
+    """
+
+    return True
+
+
+def _model_ids(entries: object) -> tuple[str, ...]:
+    if isinstance(entries, dict):
+        return tuple(str(key) for key in entries)
+    if isinstance(entries, list):
+        ids = []
+        for entry in entries:
+            record = as_record(entry) if isinstance(entry, dict) else {}
+            model_id = string_field(record, "id") if record else None
+            if model_id is not None:
+                ids.append(model_id)
+        return tuple(ids)
+    return ()
+
+
+def _session_summary(
+    record: JsonObject,
+    provider: Provider,
+    surface: str,
+) -> SessionSummary:
+    session_id = string_field(record, "id") or ""
+    return SessionSummary(
+        provider=provider,
+        surface=surface,
+        id=session_id,
+        provider_session_id=session_id or None,
+        title=string_field(record, "title"),
+        raw=record,
+    )
