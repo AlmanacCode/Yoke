@@ -3,6 +3,9 @@ title: "Runtime Flow"
 summary: "Runtime flow explains how a Yoke harness turns prompts into runs, sessions, normalized events, and optional .yoke snapshots."
 topics: [architecture, runtime]
 sources:
+  - id: readme
+    type: file
+    path: README.md
   - id: models
     type: file
     path: src/yoke/models.py
@@ -89,6 +92,12 @@ This keeps execution and storage loosely coupled, but it also means the local
 `.yoke` store is not a crash-safe lifecycle manager. Embedding products that
 need stronger durability should persist live events through their own lifecycle
 store instead of relying only on the post-run snapshot.
+
+SDK callers should pass the store root to `RunStore.at(...)`, such as
+`.yoke`, because the store appends `runs/` itself [@store]. The reference page
+records this as a current gotcha: an older README snippet still shows
+`.yoke/runs`, which would nest records under `.yoke/runs/runs/` with the
+current implementation [@readme] [@store].
 
 See [CLI And Run Storage](../reference/cli-and-run-storage) for exact commands,
 file names, and inspection behavior.
