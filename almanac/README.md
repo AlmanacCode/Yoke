@@ -27,9 +27,10 @@ collections.
 
 For execution state, read [Runs And Sessions](concepts/runs-and-sessions),
 [Normalized Events](concepts/normalized-events), and
-[CLI And Run Storage](reference/cli-and-run-storage). Together they explain the
-difference between live conversations, collected run results, event streams,
-and `.yoke/runs/` snapshots.
+[Runtime Flow](architecture/runtime-flow), then use
+[CLI And Run Storage](reference/cli-and-run-storage) for exact shell behavior.
+Together they explain the difference between live conversations, collected run
+results, event streams, and `.yoke/runs/` snapshots.
 
 For product embedding, read
 [codealmanac Integration](architecture/codealmanac-integration). It records the

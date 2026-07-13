@@ -66,3 +66,5 @@ Runs carry normalized events directly, and streamed sessions yield normalized ev
 Embedding applications can also receive run events through `RunOptions(on_event=...)`. The README defines `on_event` as a synchronous callback that receives each normalized event once during a one-shot run [@readme]. The option is runtime-only: `RunOptions` excludes the callback from serialization and reports it as an SDK-only runtime option because a Python callable cannot round-trip through agent folders [@options].
 
 The callback is a surface-planned feature, not a universal provider promise. `RunOptions.features()` declares `run_event_callbacks` when `on_event` is present, and capability tests show automatic Codex planning selects the Codex app-server surface while explicit Codex CLI or Codex Python SDK surfaces reject the run before execution [@options] [@capability-tests]. Use `harness.stream(...)` when the caller needs a portable event iterator instead of a live callback [@readme].
+
+[Runtime Flow](../architecture/runtime-flow) places callbacks, streaming, collected events, and stored `events.jsonl` files in one execution path.

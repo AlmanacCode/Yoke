@@ -25,7 +25,8 @@ Use [Runs And Sessions](runs-and-sessions) and
 [Normalized Events](normalized-events) together. Runs and sessions explain the
 difference between collected execution results and live conversation handles;
 normalized events explain the shared stream records that connect provider
-activity to stored or embedded execution state.
+activity to stored or embedded execution state. [Runtime Flow](../architecture/runtime-flow)
+connects both concepts to harness execution and `.yoke` snapshots.
 
 ## Authoring And Knowledge
 

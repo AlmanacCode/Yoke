@@ -40,6 +40,8 @@ The distinction is simple: the session is the conversation handle, the turn is o
 
 A stored record keeps metadata such as kind, provider, surface, status, cwd, agent, collection, provider session id, paths, and event count [@store].
 
+[Runtime Flow](../architecture/runtime-flow) explains where this snapshot step sits in the larger execution path.
+
 ## Workflow runs
 
 Workflows have their own result model, `WorkflowRun`. It records the workflow name, run mode, optional run id, provider, surface, status, step results, traces, output, data, and failure [@models]. When stored, `RunStore` marks the record kind as `workflow` and derives the provider session id from the first workflow step that has one [@store].

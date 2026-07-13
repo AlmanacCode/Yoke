@@ -28,6 +28,8 @@ sources:
 
 The Yoke CLI is the shell surface for folder-authored agents. It loads a named agent from a collection folder, binds it to a [Yoke Harness](../concepts/yoke-harness), runs a command, and stores the result in a local `.yoke` run store when the command produces an execution result [@cli]. This makes CLI runs inspectable without changing the provider-native transcript locations that Claude or Codex may maintain themselves [@reference].
 
+For the architecture behind this command surface, read [Runtime Flow](../architecture/runtime-flow).
+
 ## Commands that execute work
 
 `yoke run <collection> <agent> <prompt>` loads `yoke.yaml` from the collection folder, resolves the named agent, creates a harness with the CLI `--provider` value or the collection `default_provider`, executes one prompt, records the result, prints the run id, and then prints output when present [@cli] [@cli-tests]. The command accepts `--cwd` for the harness working directory and `--store` for the root that contains `.yoke`-style run records [@cli].
