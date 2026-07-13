@@ -25,6 +25,8 @@ For filesystem-authored agents, read [Agent Folders](concepts/agent-folders).
 Use it before changing folder agents, skills, subagents, workflows, or named
 collections.
 
+For architecture boundaries, read [Architecture](architecture).
+
 For execution state, read [Runs And Sessions](concepts/runs-and-sessions),
 [Normalized Events](concepts/normalized-events), and
 [Runtime Flow](architecture/runtime-flow), then use
