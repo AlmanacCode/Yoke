@@ -44,7 +44,7 @@ Agent selection is a required typed enum for `build`, `ingest`, or `garden` [@in
 
 `codealmanac` should expose maintained knowledge to agents through the public `codealmanac` CLI first, not through a required MCP server, bundled skill, or attached script [@setup-transcript]. The proposed first-version product shape is `codealmanac setup` installing concise global agent instructions; those instructions tell shell-capable agents to run commands such as `codealmanac discover`, `codealmanac search`, and `codealmanac show` when external technical knowledge is relevant [@setup-transcript].
 
-This keeps the access path small: installed agent guidance points the agent to the CLI, and the CLI calls the hosted knowledge API [@setup-transcript]. Authentication can remain in the CLI, the same path works across Codex and Claude-style shell agents, and MCP can be added later without changing the knowledge product boundary [@setup-transcript].
+This keeps the access path small: installed agent guidance points the agent to the CLI, and the CLI calls the knowledge service behind that command [@setup-transcript]. Authentication can remain in the CLI, the same path works across Codex and Claude-style shell agents, and MCP can be added later without changing the knowledge product boundary [@setup-transcript].
 
 ## Runtime Environment
 
