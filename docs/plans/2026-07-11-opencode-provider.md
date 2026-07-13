@@ -1,5 +1,14 @@
 # OpenCode Provider Implementation Plan
 
+**Status (2026-07-12):** Task 4's PERMISSIONS/REQUEST_EVENTS row and the "no
+polling-discoverable pending permission signal" claim below turned out to be
+wrong — `GET /permission` is real and non-deprecated. Live permission
+approval, filesystem-agent subagents, and both PLUGINS and HOOKS (all listed
+`UNSUPPORTED`/`UNKNOWN` below) shipped after this plan was written. This
+document is kept as the historical record of the initial implementation;
+see [Provider Surfaces](../../almanac/concepts/provider-surfaces.md) and
+`src/yoke/surfaces.py` for current, accurate capability status.
+
 **Goal:** Add OpenCode as Yoke's third provider, so any Yoke consumer (CodeAlmanac included) can run agents on OpenCode through the same `Harness` API as Claude and Codex.
 
 **Architecture:** `Provider.OPENCODE` / `Surface.OPENCODE_SERVER`. OpenCode has no Python SDK — it's a locally spawned HTTP server (`opencode serve --port 0`) with a documented OpenAPI surface. Following the precedent already set by `CodexAppServer` (`providers/codex_app/process.py`), the process/HTTP/DB-polling mechanics stay synchronous and thread-backed — the same shape as the proven CodeAlmanac implementation being ported — and the async `ProviderAdapter` methods bridge to them via `asyncio.to_thread`, rather than a ground-up asyncio rewrite that would need fresh live-testing to trust. OpenCode's own SSE stream was found unreliable for live progress in a prior spike (CodeAlmanac, 2026-07-09), so this adapter polls OpenCode's own SQLite database for live events and stuck-tool-call detection instead. Sessions are first-class (`start`/`send`/`close`), not a one-shot-only wrapper: OpenCode's HTTP API supports session reuse natively, and Yoke shouldn't be narrower than the surface it wraps.

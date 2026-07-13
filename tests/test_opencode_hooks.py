@@ -96,3 +96,27 @@ def test_bridge_reports_deny_and_message_over_http() -> None:
         assert body["message"] == "blocked"
     finally:
         bridge.stop()
+
+
+def test_bridge_reports_a_visible_deny_instead_of_resetting_the_connection() -> None:
+    # Regression: a bug in a caller's request_handler (or a
+    # Response.updated_input value json.dumps can't serialize) used to
+    # propagate out of do_POST uncaught, resetting the connection with no
+    # response at all. The generated plugin's `await res.json()` then
+    # throws, which — per tool.execute.before's own semantics — blocks the
+    # tool call with no context and no REQUEST_RESOLVED event. A real HTTP
+    # 200 with an honest deny message is strictly better: still fails
+    # closed, but distinguishable from a genuine policy denial.
+    def broken_resolve(session_id, payload):
+        raise RuntimeError("handler exploded")
+
+    bridge = OpencodeHookBridge(resolve=broken_resolve)
+    bridge.start()
+    try:
+        response = httpx.post(f"{bridge.base_url}/tool-hook", json=_PAYLOAD, timeout=5)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["deny"] is True
+        assert "handler exploded" in body["message"]
+    finally:
+        bridge.stop()

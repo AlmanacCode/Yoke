@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from yoke import Agent, Harness, Skill
+from yoke.errors import YokeError
 from yoke.options import ForkOptions, SessionOptions
 from yoke.providers.opencode import http
 from yoke.providers.opencode_server import OpencodeServer, _OpencodeSession
@@ -154,6 +155,21 @@ def test_opencode_runtime_sets_config_dir_for_subagents_without_skills(
         assert deployment.opencode_config_dir is not None
     finally:
         deployment.cleanup()
+
+
+def test_opencode_runtime_rejects_colliding_subagent_filenames(tmp_path: Path) -> None:
+    # Regression: two subagent names that slugify to the same
+    # agents/<name>.md path used to silently overwrite one another with no
+    # error — _write_codex already guards the equivalent case for Codex.
+    agent = Agent(
+        instructions="root",
+        subagents={
+            "code review": Agent(instructions="a"),
+            "code-review": Agent(instructions="b"),
+        },
+    )
+    with pytest.raises(YokeError):
+        deploy_runtime(agent, "opencode", tmp_path)
 
 
 def test_opencode_shared_process_keeps_runtime_until_last_release(

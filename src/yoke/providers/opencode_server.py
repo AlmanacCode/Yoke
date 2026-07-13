@@ -128,8 +128,11 @@ class _OpencodeSession:
     # Set for the duration of one _send() call so a live tool.execute.before
     # hook (OpencodeHookBridge — a long-lived, process-scoped server that
     # outlives any one turn) can still emit its resolved event into whatever
-    # turn is currently in flight. None between turns and while idle.
+    # turn is currently in flight, and resolve against that turn's own
+    # RunOptions.provider.opencode override rather than the fixed
+    # session-start handler. Both None between turns and while idle.
     current_emit: Callable[[Event], None] | None = None
+    current_request_handler: object | None = None
 
 
 class OpencodeServer:
@@ -654,12 +657,23 @@ class OpencodeServer:
             environment["OPENCODE_CONFIG_CONTENT"] = deployment.opencode_config_content
         if hook_bridge is not None:
             environment["YOKE_HOOK_BRIDGE_URL"] = hook_bridge.base_url
-        server = start_opencode_server(
-            self.command,
-            harness.cwd,
-            OPENCODE_RUN_STARTUP_TIMEOUT_SECONDS,
-            env=environment,
-        )
+        try:
+            server = start_opencode_server(
+                self.command,
+                harness.cwd,
+                OPENCODE_RUN_STARTUP_TIMEOUT_SECONDS,
+                env=environment,
+            )
+        except Exception:
+            # Regression: the bridge previously started (it must be up
+            # before spawn, since its URL goes into the child's env) but
+            # this whole try/except only ever wrapped the create_session
+            # call below — a startup failure (missing binary, port
+            # exhaustion, timeout) leaked the bridge's thread and listening
+            # socket for the life of the process.
+            if hook_bridge is not None:
+                hook_bridge.stop()
+            raise
         try:
             record = http.create_session(
                 server.base_url,
@@ -717,11 +731,12 @@ class OpencodeServer:
 
     def _resolve_hook_request(self, session_id: str, payload: JsonObject) -> Response:
         internal = self._sessions.get(session_id)
-        handler = (
-            opencode_request_handler(internal.provider_options)
-            if internal is not None
-            else None
-        )
+        # Per-turn override, matching the permission watchdog's own
+        # opencode_options_for_run(options)-or-session-level fallback — set
+        # for the duration of the turn currently in flight (_send), already
+        # falls back to the session-level handler internally when a turn
+        # doesn't set its own. None outside any active turn.
+        handler = internal.current_request_handler if internal is not None else None
         event, response = resolve_hook_request(payload, handler)
         if internal is not None and internal.current_emit is not None:
             internal.current_emit(
@@ -759,18 +774,36 @@ class OpencodeServer:
             if on_event is not None:
                 on_event(event)
 
+        # RunOptions.provider.opencode overrides the session-level handler
+        # for this turn only, same fallback order the permission watchdog
+        # already used — computed once here so hooks and permissions agree
+        # on which handler answers *this* turn instead of hooks silently
+        # keeping whatever handler was live at session-start time.
+        effective_options = (
+            opencode_options_for_run(options) or internal.provider_options
+        )
         # Lets a live tool.execute.before hook call (OpencodeHookBridge,
         # providers/opencode/hooks.py) emit its resolved event into *this*
-        # turn's stream — the bridge is a long-lived, process-scoped server
-        # (env-var-addressed at process spawn, shared across forks), so it
-        # can't bind to one turn's `emit` closure at construction time.
+        # turn's stream, and resolve against *this* turn's handler — the
+        # bridge is a long-lived, process-scoped server (env-var-addressed
+        # at process spawn, shared across forks), so it can't bind to one
+        # turn's closures/options at construction time.
         internal.current_emit = emit
+        internal.current_request_handler = opencode_request_handler(effective_options)
         try:
             return self._send_turn(
-                internal, prompt, provider_id, model_id, options, emit, events
+                internal,
+                prompt,
+                provider_id,
+                model_id,
+                options,
+                emit,
+                events,
+                effective_options,
             )
         finally:
             internal.current_emit = None
+            internal.current_request_handler = None
 
     def _send_turn(
         self,
@@ -781,6 +814,7 @@ class OpencodeServer:
         options: RunOptions,
         emit: Callable[[Event], None],
         events: list,
+        effective_options: OpencodeOptions | dict[str, object] | None,
     ) -> Run:
         # Emitted first and unconditionally, matching CodexAppServer's
         # _send(): Run.provider_session_id scans events in reverse for the
@@ -811,9 +845,6 @@ class OpencodeServer:
         )
         watchdog_thread.start()
 
-        effective_options = (
-            opencode_options_for_run(options) or internal.provider_options
-        )
         permission_watchdog = OpencodePermissionWatchdog(
             base_url=internal.process.base_url,
             session_id=internal.session_id,

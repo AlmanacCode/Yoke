@@ -47,6 +47,12 @@ export const YokeToolHook = async () => {
           tool: input.tool,
           args: output.args,
         }),
+        // A hung bridge (e.g. a caller's request_handler blocking
+        // indefinitely on I/O) would otherwise block this tool call
+        // forever with no way for the caller to recover. A timed-out
+        // fetch throws, which — same as any other throw here — blocks
+        // the call rather than silently letting it through.
+        signal: AbortSignal.timeout(30000),
       });
       const decision = await res.json();
       if (decision.args) {
@@ -87,15 +93,32 @@ class OpencodeHookBridge:
                     payload = as_record(json.loads(self.rfile.read(length) or b"{}"))
                 except ValueError:
                     payload = {}
-                session_id = string_field(payload, "sessionID") or ""
-                response = bridge._resolve(session_id, payload)
-                body = json.dumps(
-                    {
-                        "args": response.updated_input,
-                        "deny": response.decision != "allow",
-                        "message": response.message,
-                    }
-                ).encode()
+                # A bare exception here (a bug in a caller's request_handler,
+                # or a Response.updated_input value json.dumps can't
+                # serialize) would otherwise reset the connection with no
+                # response — the plugin's `await res.json()` then throws
+                # inside tool.execute.before, which per its own semantics
+                # blocks the tool call. That's an indistinguishable silent
+                # deny with no REQUEST_RESOLVED event ever emitted. Turn it
+                # into an honest, visible one instead.
+                try:
+                    session_id = string_field(payload, "sessionID") or ""
+                    response = bridge._resolve(session_id, payload)
+                    body = json.dumps(
+                        {
+                            "args": response.updated_input,
+                            "deny": response.decision != "allow",
+                            "message": response.message,
+                        }
+                    ).encode()
+                except Exception as error:  # noqa: BLE001 - reported below
+                    body = json.dumps(
+                        {
+                            "args": None,
+                            "deny": True,
+                            "message": f"Yoke hook bridge error: {error}",
+                        }
+                    ).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))

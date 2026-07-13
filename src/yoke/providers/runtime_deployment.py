@@ -273,7 +273,16 @@ def _write_opencode(agent: Agent, deployment: RuntimeDeployment) -> None:
     skills = config_dir / "skills"
     wrote_skills = bool(_write_skills(inline_skills(agent), Provider.OPENCODE, skills))
     wrote_agents = False
-    for file in opencode_agent_files(agent, directory="agents"):
+    agent_files = opencode_agent_files(agent, directory="agents")
+    agent_paths = [file.path for file in agent_files]
+    if len(set(agent_paths)) != len(agent_paths):
+        # Mirrors _write_codex's own check: two subagent names that slugify
+        # to the same filename (e.g. "Code Review" and "code-review") would
+        # otherwise silently overwrite one another with no error.
+        raise YokeError(
+            "OpenCode subagents compile to colliding agents/<name>.md paths"
+        )
+    for file in agent_files:
         path = config_dir / file.path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(file.text)

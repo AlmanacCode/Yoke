@@ -1820,9 +1820,12 @@ MATRIX: dict[tuple[Provider, str], Capabilities] = {
                 "relays each tool call to a local HTTP bridge, resolved via "
                 "ProviderOptions.opencode.request_handler/policy — confirmed "
                 "live: argument mutation and denial both actually change "
-                "what runs. Deployed only when a handler/policy is "
-                "configured at session start; RunOptions.provider.opencode "
-                "set later per-turn does not retroactively enable it.",
+                "what runs. The bridge itself is deployed only once, when a "
+                "handler/policy is configured at session start (a later "
+                "per-turn RunOptions.provider.opencode cannot retroactively "
+                "deploy it); once deployed, each turn's own "
+                "RunOptions.provider.opencode *does* override which handler "
+                "answers, same fallback order as permission resolution.",
             ),
             Feature.MCP: (
                 Support.COMPILED,
