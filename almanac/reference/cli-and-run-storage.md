@@ -12,6 +12,9 @@ sources:
   - id: store
     type: file
     path: src/yoke/store.py
+  - id: models
+    type: file
+    path: src/yoke/models.py
   - id: reference
     type: file
     path: docs/reference.md
@@ -48,7 +51,7 @@ For the architecture behind this command surface, read [Runtime Flow](../archite
 
 `RunStore.at(path)` treats `path` as the store root and writes run directories under `path/runs/` [@store]. The default CLI store is `.yoke`, so default CLI executions write under `.yoke/runs/<run_id>/` [@cli] [@store].
 
-Each stored result has `record.json` and `result.json`; `events.jsonl` exists only when the run or workflow has normalized events [@store]. `record.json` is the inspection index. It records the generated Yoke run id, kind, provider, surface, status, cwd, agent, collection, provider session id, paths to stored files, and event count [@store]. `result.json` stores the provider-neutral result without volatile raw provider objects, and `events.jsonl` stores normalized events as JSON Lines without raw provider objects [@store].
+Each stored result has `record.json` and `result.json`; `events.jsonl` exists only when the run or workflow has normalized events [@store]. `record.json` is the inspection index. It records the generated Yoke run id, kind, provider, surface, status, cwd, agent, collection, provider session id, paths to stored files, and event count [@store]. For one-shot runs, that index value comes from the attached `Session.provider_session_id`; the `Run.provider_session_id` model property can also fall back to the newest event that carries a provider session id [@store] [@models]. `result.json` stores the provider-neutral result without volatile raw provider objects, and `events.jsonl` stores normalized events as JSON Lines without raw provider objects [@store].
 
 Workflow results use the same store. The record kind becomes `workflow`, workflow events are collected from step runs, and the stored provider session id is the first provider session id found in those step runs [@store] [@store-tests].
 
