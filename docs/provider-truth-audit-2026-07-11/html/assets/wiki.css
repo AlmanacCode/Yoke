@@ -1,0 +1,338 @@
+/* ============================================================
+   Explainer wiki — shared design system
+   One stylesheet, no external fonts, no frameworks.
+   Every page links this file and uses the same structure.
+   Change only the --accent / --ink palette to rebrand.
+   ============================================================ */
+
+:root {
+  --ink:        #15171c;
+  --body:       #2b2f37;
+  --muted:      #6b7280;
+  --faint:      #9aa1ab;
+  --line:       #e7e9ee;
+  --line-soft:  #f0f2f5;
+  --bg:         #ffffff;
+  --panel:      #f8f9fb;
+  --accent:     #2f5bd0;
+  --accent-bg:  #eef2fc;
+  --good:       #1f7a4d;
+  --good-bg:    #edf7f1;
+  --bad:        #b23b3b;
+  --bad-bg:     #fbefee;
+  --warn:       #9a6a12;
+  --warn-bg:    #fbf3e2;
+
+  /* code syntax — calm, few colors */
+  --code-bg:    #fafbfc;
+  --c-kw:       #2f5bd0;   /* keyword */
+  --c-str:      #1f7a4d;   /* string */
+  --c-com:      #9aa1ab;   /* comment */
+  --c-fn:       #b4530f;   /* function / component */
+  --c-type:     #0a7ea4;   /* type */
+  --c-punc:     #6b7280;
+
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --measure: 42rem;
+  --nav-h: 57px;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--body);
+  font-family: var(--sans);
+  font-size: 18px;
+  line-height: 1.72;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ── reading progress ─────────────────────────── */
+#progress {
+  position: fixed; top: 0; left: 0; height: 2px; width: 0%;
+  background: var(--accent); z-index: 60;
+  transition: width 90ms linear;
+}
+
+/* ── top navbar (the wiki pages) ──────────────── */
+.topnav {
+  position: sticky; top: 0; z-index: 40;
+  background: rgba(255,255,255,0.86);
+  backdrop-filter: saturate(180%) blur(10px);
+  border-bottom: 1px solid var(--line);
+  height: var(--nav-h);
+}
+.topnav .inner {
+  max-width: 1180px; margin: 0 auto;
+  padding: 0 40px; height: 100%;
+  display: flex; align-items: center; gap: 28px;
+}
+.topnav .logo {
+  display: flex; align-items: center; gap: 9px;
+  font-weight: 680; color: var(--ink); font-size: 15.5px;
+  letter-spacing: -0.01em; text-decoration: none;
+}
+.topnav .logo .dot {
+  width: 18px; height: 18px; border-radius: 5px;
+  background: var(--accent);
+  display: inline-block;
+}
+.topnav .links { display: flex; gap: 4px; margin-left: 6px; flex: 1; overflow-x: auto; }
+.topnav .links a {
+  text-decoration: none; color: var(--muted);
+  font-size: 14.5px; font-weight: 500;
+  padding: 7px 12px; border-radius: 7px;
+  white-space: nowrap;
+  transition: color 120ms, background 120ms;
+}
+.topnav .links a:hover { color: var(--ink); background: var(--panel); }
+.topnav .links a.current { color: var(--accent); background: var(--accent-bg); }
+.topnav .repo {
+  font-family: var(--mono); font-size: 12.5px;
+  color: var(--faint); text-decoration: none; white-space: nowrap;
+}
+.topnav .repo:hover { color: var(--muted); }
+
+/* ── layout shell ─────────────────────────────── */
+.shell {
+  max-width: 1180px; margin: 0 auto;
+  padding: 0 40px;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 64px;
+  align-items: start;
+}
+.sidebar {
+  position: sticky; top: var(--nav-h);
+  height: calc(100vh - var(--nav-h));
+  padding: 44px 0;
+  display: flex; flex-direction: column;
+}
+.side-label {
+  font-family: var(--mono); font-size: 11px;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--faint); margin-bottom: 16px;
+}
+nav.toc { display: flex; flex-direction: column; gap: 1px; }
+nav.toc a {
+  text-decoration: none; color: var(--muted);
+  font-size: 14px; line-height: 1.4;
+  padding: 7px 0 7px 14px; margin-left: -16px;
+  border-left: 2px solid transparent;
+  transition: color 120ms, border-color 120ms;
+}
+nav.toc a:hover { color: var(--ink); }
+nav.toc a.active { color: var(--ink); border-color: var(--accent); font-weight: 500; }
+
+main { padding: 0 0 140px; min-width: 0; }
+.content { max-width: var(--measure); }
+
+/* ── page head ────────────────────────────────── */
+header.head { padding: 60px 0 14px; }
+.eyebrow {
+  font-family: var(--mono); font-size: 12px;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--accent); margin: 0 0 18px;
+}
+h1 {
+  font-size: 42px; line-height: 1.1; letter-spacing: -0.022em;
+  font-weight: 680; color: var(--ink); margin: 0 0 22px; max-width: 20ch;
+}
+.lead { font-size: 20px; line-height: 1.6; color: var(--body); margin: 0; }
+.lead em { color: var(--ink); font-style: italic; }
+.rule { border: 0; border-top: 1px solid var(--line); margin: 56px 0; }
+
+/* ── sections ─────────────────────────────────── */
+section { padding-top: 36px; margin-top: 36px; }
+.kicker {
+  font-family: var(--mono); font-size: 12px;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--faint); margin: 0 0 12px;
+}
+h2 {
+  font-size: 27px; line-height: 1.2; letter-spacing: -0.018em;
+  font-weight: 660; color: var(--ink); margin: 0 0 18px; max-width: 24ch;
+  scroll-margin-top: calc(var(--nav-h) + 20px);
+}
+h3 { font-size: 17.5px; font-weight: 640; color: var(--ink); margin: 30px 0 8px; }
+p { margin: 0 0 20px; }
+strong { color: var(--ink); font-weight: 640; }
+.dim { color: var(--muted); }
+a.link, p a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--accent-bg); }
+a.link:hover, p a:hover { border-color: var(--accent); }
+a.ext::after { content: " ↗"; font-size: 0.85em; color: var(--faint); }
+
+code.inline {
+  font-family: var(--mono); font-size: 0.86em;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 5px; padding: 1px 5px; color: var(--ink);
+}
+
+/* lists */
+ul.clean { list-style: none; margin: 0 0 20px; padding: 0; }
+ul.clean li { position: relative; padding-left: 26px; margin-bottom: 12px; }
+ul.clean li::before {
+  content: ""; position: absolute; left: 4px; top: 13px;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+}
+
+/* principle pull */
+.principle {
+  font-size: 21px; line-height: 1.5; color: var(--ink);
+  font-weight: 560; letter-spacing: -0.01em;
+  border-left: 3px solid var(--accent); padding: 2px 0 2px 22px;
+  margin: 8px 0 28px;
+}
+
+/* ── callouts ─────────────────────────────────── */
+.callout {
+  border: 1px solid var(--line); border-radius: 12px;
+  padding: 18px 20px; margin: 0 0 24px;
+  font-size: 16px; line-height: 1.6; color: var(--muted);
+  background: var(--panel);
+}
+.callout .clabel {
+  font-family: var(--mono); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  display: block; margin-bottom: 6px; font-weight: 600;
+}
+.callout.sot { background: var(--accent-bg); border-color: #d8e2f8; }
+.callout.sot .clabel { color: var(--accent); }
+.callout.sot strong { color: var(--ink); }
+.callout.warn { background: var(--warn-bg); border-color: #f0e2c4; }
+.callout.warn .clabel { color: var(--warn); }
+
+/* "incorporated from the vendor docs" — the why, with a source */
+.docnote {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-bg);
+  border-radius: 0 10px 10px 0;
+  padding: 14px 18px; margin: 0 0 26px;
+  font-size: 15.5px; line-height: 1.6; color: var(--body);
+}
+.docnote .dlabel {
+  font-family: var(--mono); font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--accent); font-weight: 700;
+  display: block; margin-bottom: 6px;
+}
+.docnote strong { color: var(--ink); }
+.docnote .src { display: block; margin-top: 9px; font-size: 13px; color: var(--muted); }
+.docnote .src a { color: var(--accent); }
+
+/* ── code blocks ──────────────────────────────── */
+figure.code { margin: 8px 0 12px; }
+.code-wrap {
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  background: var(--code-bg);
+}
+.code-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px; border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.code-bar .fname { font-family: var(--mono); font-size: 12.5px; color: var(--ink); font-weight: 600; }
+.code-bar .ftag {
+  margin-left: auto; font-family: var(--mono); font-size: 10.5px;
+  text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint);
+}
+pre {
+  margin: 0; padding: 16px 18px; overflow-x: auto;
+  font-family: var(--mono); font-size: 13px; line-height: 1.7; color: var(--ink);
+}
+pre .kw  { color: var(--c-kw); }
+pre .str { color: var(--c-str); }
+pre .com { color: var(--c-com); font-style: italic; }
+pre .fn  { color: var(--c-fn); }
+pre .ty  { color: var(--c-type); }
+pre .pu  { color: var(--c-punc); }
+figcaption { font-size: 14px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+figcaption b { color: var(--ink); font-weight: 600; }
+
+/* ── file tree ────────────────────────────────── */
+.tree {
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--code-bg); padding: 18px 20px; margin: 8px 0 16px;
+  font-family: var(--mono); font-size: 13px; line-height: 1.85;
+  overflow-x: auto; white-space: pre;
+}
+.tree .d { color: var(--accent); font-weight: 600; }
+.tree .f { color: var(--ink); }
+.tree .c { color: var(--faint); }       /* tree connectors */
+.tree .note { color: var(--faint); font-style: italic; }
+
+/* ── diagram figure ───────────────────────────── */
+figure.diagram {
+  margin: 8px 0 14px;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: var(--bg); padding: 26px 24px; overflow-x: auto;
+}
+figure.diagram svg { display: block; margin: 0 auto; max-width: 100%; }
+figure.diagram svg text { font-family: var(--mono); }
+
+/* ── tables ───────────────────────────────────── */
+table.matrix {
+  width: 100%; border-collapse: collapse; margin: 8px 0 20px; font-size: 15px;
+}
+table.matrix th, table.matrix td {
+  text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top;
+}
+table.matrix th {
+  font-family: var(--mono); font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--faint); font-weight: 600;
+}
+table.matrix td b { color: var(--ink); font-weight: 620; }
+table.matrix tr:last-child td { border-bottom: 0; }
+
+/* ── cards (integrations etc.) ────────────────── */
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 8px 0 20px; }
+.card-item {
+  border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px;
+}
+.card-item .ct { font-weight: 640; color: var(--ink); font-size: 16px; margin-bottom: 4px; }
+.card-item .cd { font-size: 14.5px; color: var(--muted); line-height: 1.55; margin-bottom: 12px; }
+.card-item .clink { font-size: 13.5px; }
+
+/* ── footer ───────────────────────────────────── */
+footer {
+  margin-top: 76px; padding-top: 26px; border-top: 1px solid var(--line);
+  font-size: 13.5px; color: var(--faint); max-width: var(--measure);
+}
+footer .disc { font-family: var(--mono); font-size: 12px; }
+footer a { color: var(--muted); }
+
+/* ── responsive ───────────────────────────────── */
+@media (max-width: 900px) {
+  .topnav .inner, .shell { padding: 0 20px; }
+  .shell { grid-template-columns: 1fr; gap: 0; }
+  .sidebar {
+    position: static; height: auto; padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .side-label { margin-bottom: 8px; }
+  nav.toc { flex-direction: row; flex-wrap: nowrap; gap: 4px; overflow-x: auto; }
+  nav.toc a { border-left: 0; border-bottom: 2px solid transparent; padding: 4px 0 8px; margin: 0; white-space: nowrap; }
+  nav.toc a.active { border-color: var(--accent); }
+  header.head { padding: 36px 0 8px; }
+  h1 { font-size: 32px; }
+  .lead { font-size: 18px; }
+  h2 { font-size: 23px; }
+  .cards { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  #progress { transition: none; }
+}
+
+@media print {
+  #progress, .topnav, .sidebar { display: none; }
+  .shell { display: block; max-width: 100%; padding: 0; }
+  body { font-size: 12pt; }
+  section, figure, .callout, table { break-inside: avoid; }
+  h1, h2 { break-after: avoid; }
+}

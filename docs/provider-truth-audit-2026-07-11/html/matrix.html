@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Yoke Provider Truth — Matrix</title><link rel="stylesheet" href="assets/wiki.css"></head>
+<body><div id="progress" aria-hidden="true"></div><div class="topnav"><div class="inner"><a class="logo" href="index.html"><span class="dot"></span>Yoke truth audit</a><nav class="links" aria-label="Pages"><a href="index.html">Verdict</a><a href="folders.html">Folders</a><a class="current" href="matrix.html">Feature matrix</a><a href="representations.html">Representations</a><a href="lifecycle.html">Lifecycle</a><a href="evidence.html">Evidence</a></nav><a class="repo" href="../../../README.md">AlmanacCode/Yoke</a></div></div>
+<div class="shell"><aside class="sidebar"><div class="side-label">On this page</div><nav class="toc" aria-label="Sections"><a href="#legend">Legend</a><a href="#active">Active surfaces</a><a href="#other">Other surfaces</a><a href="#judgment">Judgment</a></nav></aside><main><div class="content">
+<header class="head"><p class="eyebrow">Feature-by-feature truth</p><h1>A capability is only as strong as its lowering path</h1><p class="lead">This matrix judges the active CodeAlmanac surfaces: Codex app-server and Claude Python SDK. It deliberately overrides optimistic headline labels when the actual Yoke declaration travels through a weaker path.</p></header><hr class="rule">
+<section id="legend"><p class="kicker">01 — Legend</p><h2>How to read it</h2>
+<table class="matrix"><thead><tr><th>Mark</th><th>Meaning</th></tr></thead><tbody><tr><td><b>Native</b></td><td>Provider-owned method or discovery path is exercised directly.</td></tr><tr><td><b>Direct</b></td><td>Typed SDK field maps without semantic invention.</td></tr><tr><td><b>Compiled</b></td><td>Instructions or provider files are generated; execution depends on discovery or model behavior.</td></tr><tr><td><b>Yoke</b></td><td>Portable product behavior orchestrated outside the provider.</td></tr><tr><td><b>Gap</b></td><td>Unsupported, misleading, or not independently verified.</td></tr></tbody></table></section>
+<section id="active"><p class="kicker">02 — Active surfaces</p><h2>Codex app vs Claude SDK</h2>
+<table class="matrix"><thead><tr><th>Feature</th><th>Codex app-server</th><th>Claude Python SDK</th><th>Audit judgment</th></tr></thead><tbody>
+<tr><td><b>One-shot run</b></td><td>Native JSON-RPC</td><td>Native SDK query</td><td>Strong</td></tr>
+<tr><td><b>Live session</b></td><td>Native thread</td><td>Native client session</td><td>Strong</td></tr>
+<tr><td><b>Streaming</b></td><td>Native notifications</td><td>Native message stream</td><td>Strong; Yoke normalization is an adapter</td></tr>
+<tr><td><b>Structured output</b></td><td>Native schema</td><td>Native schema</td><td>Strong</td></tr>
+<tr><td><b>Model listing</b></td><td>Native <code class="inline">model/list</code></td><td>Unsupported by Yoke</td><td>Provider asymmetry is honest</td></tr>
+<tr><td><b>Root model selection</b></td><td>Native request field</td><td>Native SDK option</td><td>Strong requested-model mapping</td></tr>
+<tr><td><b>Permissions</b></td><td>Native sandbox/approval</td><td>Native mode/rules/callback</td><td>Strong, provider-shaped</td></tr>
+<tr><td><b>Filesystem skills</b></td><td>Native extra roots</td><td>Native local plugin</td><td>Strong and live-proven</td></tr>
+<tr><td><b>Inline text skills</b><br><a class="link" href="representations.html#skills">What this means</a></td><td>Prompt-compiled</td><td>Prompt-compiled</td><td>Instruction text is inserted into the prompt; no native identity, files, lazy loading, or skill invocation</td></tr>
+<tr><td><b>Filesystem custom agents</b></td><td>Provider supports `.codex/agents`</td><td>Provider supports `.claude/agents`</td><td>Yoke bundle can generate both</td></tr>
+<tr><td><b>Yoke declared subagents</b></td><td><b>Prompt-compiled</b></td><td><b>Direct SDK agents map</b></td><td>Codex gap; Claude strong</td></tr>
+<tr><td><b>Generic child spawning</b></td><td>Native collab tools</td><td>Built-in Agent tool</td><td>Real children, distinct from named definitions</td></tr>
+<tr><td><b>Subagent model selection</b></td><td>Prompt request only today</td><td>Typed AgentDefinition field</td><td>Codex weak; effective identity unreported on both</td></tr>
+<tr><td><b>Hooks</b></td><td>Provider capability; thin Yoke surface</td><td>Direct SDK callbacks</td><td>Claude stronger in current adapter</td></tr>
+<tr><td><b>MCP</b></td><td>Provider config/runtime</td><td>Direct SDK option</td><td>Provider-shaped; audit exact option coverage separately</td></tr>
+<tr><td><b>Goals</b></td><td>Native thread state</td><td>Compiled/Yoke loop</td><td>Not parity; both useful</td></tr>
+<tr><td><b>Portable workflows</b></td><td>Yoke orchestration</td><td>Yoke orchestration</td><td>Honest if named Yoke workflow</td></tr>
+<tr><td><b>Native workflow engine</b></td><td>Unsupported</td><td>Unsupported in Python adapter</td><td>Claude TS has a separate native surface</td></tr>
+<tr><td><b>Interrupt</b></td><td>Native</td><td>Native</td><td>Strong</td></tr>
+<tr><td><b>Fork</b></td><td>Native</td><td>Native</td><td>Strong</td></tr>
+<tr><td><b>Authentication</b></td><td>External existing login</td><td>External existing login</td><td>SDK readiness, not Yoke-owned OAuth UX</td></tr>
+<tr><td><b>Run storage</b></td><td>Optional Yoke snapshot</td><td>Optional Yoke snapshot</td><td>Yoke-owned; CodeAlmanac uses its own ledger</td></tr>
+<tr><td><b>Native transcripts</b></td><td>Persisted thread/rollout; list and read pass live</td><td>Local JSONL; session ID and readback pass live</td><td>Provider-owned and independent from temporary runtime bundles</td></tr>
+</tbody></table>
+<div class="callout sot"><span class="clabel">Source of truth · support</span><strong>The lowering code and provider contract outrank Yoke's summary badge.</strong> `Capabilities` is documentation metadata; it does not itself make a feature work.</div></section>
+<section id="other"><p class="kicker">03 — Other Yoke surfaces</p><h2>Broader does not mean equal</h2>
+<table class="matrix"><thead><tr><th>Surface</th><th>Useful truth</th><th>Main weakness</th></tr></thead><tbody>
+<tr><td><b>Codex CLI</b></td><td>Native project agents, skills, hooks, MCP</td><td>Yoke declared map remains compiled; sessions are resume-based</td></tr>
+<tr><td><b>Codex Python SDK</b></td><td>Runs, sessions, models, login, fork, interrupt</td><td>Skills/MCP/goals compiled; custom-agent discovery unknown</td></tr>
+<tr><td><b>Claude TypeScript SDK</b></td><td>Native SDK agents and native Workflow surface</td><td>No built-in Yoke adapter today</td></tr>
+<tr><td><b>Claude CLI</b></td><td>Native filesystem agents, skills, plugins, hooks</td><td>Much runtime coverage is declared unknown in Yoke</td></tr>
+</tbody></table>
+<p>These surfaces belong in a capability catalog, but they should not imply CodeAlmanac exercises them.</p></section>
+<section id="judgment"><p class="kicker">04 — Judgment</p><h2>Keep, rename, redesign</h2>
+<table class="matrix"><thead><tr><th>Action</th><th>Features</th></tr></thead><tbody><tr><td><b>Keep</b></td><td>Runs, sessions, streaming, typed results, events, permissions, native path-backed skills, Claude SDK subagents</td></tr><tr><td><b>Rename honestly</b></td><td>Portable workflows, compiled goals, inline skills, Codex prompt-delegated agents</td></tr><tr><td><b>Redesign</b></td><td>Codex declared custom agents, semantic status headline, effective-model evidence</td></tr><tr><td><b>Research</b></td><td>Per-run Codex custom-agent injection without repository contamination</td></tr></tbody></table>
+<p>Next: see the <a class="link" href="evidence.html">implementation evidence and verification record</a>.</p></section>
+<footer><p>This page separates useful portability from false parity.</p><p class="disc">AI-generated. Verify critical decisions independently.</p></footer>
+</div></main></div><script src="assets/wiki.js"></script></body></html>

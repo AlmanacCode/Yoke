@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Yoke Provider Truth — Verdict</title><link rel="stylesheet" href="assets/wiki.css"></head>
+<body>
+<div id="progress" aria-hidden="true"></div>
+<div class="topnav"><div class="inner"><a class="logo" href="index.html"><span class="dot"></span>Yoke truth audit</a><nav class="links" aria-label="Pages"><a class="current" href="index.html">Verdict</a><a href="folders.html">Folders</a><a href="matrix.html">Feature matrix</a><a href="representations.html">Representations</a><a href="lifecycle.html">Lifecycle</a><a href="evidence.html">Evidence</a></nav><a class="repo" href="../../../README.md">AlmanacCode/Yoke</a></div></div>
+<div class="shell">
+<aside class="sidebar"><div class="side-label">On this page</div><nav class="toc" aria-label="Sections"><a href="#answer">The answer</a><a href="#language">Truth language</a><a href="#findings">Strong findings</a><a href="#target">Target contract</a></nav></aside>
+<main><div class="content">
+<header class="head"><p class="eyebrow">Provider truth audit · July 2026</p><h1>Yoke is strongest when it translates mechanics, weakest when it claims semantic parity</h1><p class="lead">Claude SDK subagents are a true provider mapping. Codex app-server delegation is real, but Yoke-declared custom agents are currently prompt-compiled rather than registered. The distinction must become impossible to miss.</p></header>
+<hr class="rule">
+<section id="answer"><p class="kicker">01 — Direct answer</p><h2>Your concern is valid</h2>
+<p>Yoke has three very different kinds of “works”: direct provider mappings, explicit provider-file generation, and model-followed prompt compilation. They currently sit too close together in the public story.</p>
+<table class="matrix"><thead><tr><th>Claim</th><th>Codex app-server</th><th>Claude Python SDK</th></tr></thead><tbody>
+<tr><td><b>Run and stream</b></td><td>True native protocol</td><td>True native SDK</td></tr>
+<tr><td><b>Path-backed skills</b></td><td>True native extra roots</td><td>True native local plugin</td></tr>
+<tr><td><b>Declared subagents</b></td><td><b>Weak:</b> prompt guidance plus generic spawn</td><td><b>True:</b> SDK <code class="inline">agents</code> parameter</td></tr>
+<tr><td><b>Subagent model</b></td><td>Requested in prompt; not attested</td><td>Passed in <code class="inline">AgentDefinition</code>; effective identity not reported</td></tr>
+<tr><td><b>Portable workflow</b></td><td>Yoke orchestration</td><td>Yoke orchestration</td></tr>
+</tbody></table>
+<div class="callout warn"><span class="clabel">Blocking truth problem</span>Yoke's status can call the Codex surface <b>provider native</b> because native collaboration tools exist, while the same report says Yoke-declared subagents are only <b>compiled</b>. The headline is technically defensible and product-misleading.</div>
+</section>
+<section id="language"><p class="kicker">02 — Classification</p><h2>Seven labels, not one green check</h2>
+<table class="matrix"><thead><tr><th>Label</th><th>Meaning</th><th>Example</th></tr></thead><tbody>
+<tr><td><b>Native protocol</b></td><td>Yoke calls a provider-owned runtime method.</td><td>Codex <code class="inline">thread/start</code></td></tr>
+<tr><td><b>Direct SDK mapping</b></td><td>A Yoke field becomes the provider's typed field.</td><td>Claude <code class="inline">agents</code></td></tr>
+<tr><td><b>Native filesystem</b></td><td>Provider discovers its own file format.</td><td><code class="inline">.codex/agents/*.toml</code></td></tr>
+<tr><td><b>Prompt-compiled</b></td><td>Behavior depends on the model following added prose.</td><td>Codex declared subagents today</td></tr>
+<tr><td><b>Yoke-orchestrated</b></td><td>Yoke runs multiple provider turns.</td><td>Portable workflows</td></tr>
+<tr><td><b>Emulated</b></td><td>Yoke approximates a provider concept.</td><td>CLI sessions via resume</td></tr>
+<tr><td><b>Unsupported / unverified</b></td><td>No honest contract or no live proof.</td><td>Effective child-model attestation</td></tr>
+</tbody></table>
+<p class="principle">“The provider can do it” and “Yoke passes your declaration into that capability” are separate facts.</p>
+</section>
+<section id="findings"><p class="kicker">03 — Findings</p><h2>What is actually weak</h2>
+<div class="cards"><div class="card-item"><div class="ct">Codex declared subagents</div><div class="cd">Redesign. Generate discoverable custom-agent definitions or name the feature prompt-delegated agents.</div></div><div class="card-item"><div class="ct">Status headline</div><div class="cd">Redesign. Report collaboration tools and declared-agent mapping independently.</div></div><div class="card-item"><div class="ct">Inline skills</div><div class="cd">Be explicit. Path-backed folders are native; inline text is compiled context.</div></div><div class="card-item"><div class="ct">Workflows</div><div class="cd">Keep, but call them Yoke workflows. They are not provider workflow engines on the active surfaces.</div></div></div>
+</section>
+<section id="target"><p class="kicker">04 — Target contract</p><h2>One source, honest lowering</h2>
+<figure class="diagram"><svg viewBox="0 0 800 330" role="img" aria-label="Target architecture"><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#2f5bd0"/></marker></defs><rect x="45" y="120" width="190" height="78" rx="4" fill="#f5f7fb" stroke="#2f5bd0"/><text x="140" y="150" text-anchor="middle">Yoke collection</text><text x="140" y="174" text-anchor="middle" font-family="monospace">agents/</text><rect x="310" y="35" width="210" height="78" rx="4" fill="#f5f7fb" stroke="#2f5bd0"/><text x="415" y="65" text-anchor="middle">Codex lowering</text><text x="415" y="89" text-anchor="middle" font-family="monospace">.codex + JSON-RPC</text><rect x="310" y="205" width="210" height="78" rx="4" fill="#f5f7fb" stroke="#2f5bd0"/><text x="415" y="235" text-anchor="middle">Claude lowering</text><text x="415" y="259" text-anchor="middle" font-family="monospace">AgentDefinition + plugin</text><rect x="595" y="35" width="165" height="78" rx="4" fill="#fff" stroke="#cbd0d8"/><text x="678" y="65" text-anchor="middle">Codex runtime</text><text x="678" y="89" text-anchor="middle" font-family="monospace">app-server</text><rect x="595" y="205" width="165" height="78" rx="4" fill="#fff" stroke="#cbd0d8"/><text x="678" y="235" text-anchor="middle">Claude runtime</text><text x="678" y="259" text-anchor="middle" font-family="monospace">Agent SDK</text><path d="M235 145 C270 120 280 85 310 75" fill="none" stroke="#2f5bd0" stroke-width="2" marker-end="url(#arrow)"/><path d="M235 175 C270 195 280 235 310 245" fill="none" stroke="#2f5bd0" stroke-width="2" marker-end="url(#arrow)"/><path d="M520 74 L595 74" fill="none" stroke="#2f5bd0" stroke-width="2" marker-end="url(#arrow)"/><path d="M520 244 L595 244" fill="none" stroke="#2f5bd0" stroke-width="2" marker-end="url(#arrow)"/></svg><figcaption><b>Target:</b> provider-neutral source stays singular; every lowering channel is named and separately verified.</figcaption></figure>
+<p>Next: the <a class="link" href="folders.html">folder placement page</a> answers exactly where `.codex` and `.claude` must live.</p>
+</section>
+<footer><p>This page states the audit verdict.</p><p class="disc">AI-generated. Verify critical decisions independently.</p></footer>
+</div></main></div><script src="assets/wiki.js"></script></body></html>

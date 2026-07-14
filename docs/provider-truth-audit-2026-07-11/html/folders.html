@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Yoke Provider Truth — Folders</title><link rel="stylesheet" href="assets/wiki.css"></head>
+<body><div id="progress" aria-hidden="true"></div><div class="topnav"><div class="inner"><a class="logo" href="index.html"><span class="dot"></span>Yoke truth audit</a><nav class="links" aria-label="Pages"><a href="index.html">Verdict</a><a class="current" href="folders.html">Folders</a><a href="matrix.html">Feature matrix</a><a href="representations.html">Representations</a><a href="lifecycle.html">Lifecycle</a><a href="evidence.html">Evidence</a></nav><a class="repo" href="../../../README.md">AlmanacCode/Yoke</a></div></div>
+<div class="shell"><aside class="sidebar"><div class="side-label">On this page</div><nav class="toc" aria-label="Sections"><a href="#source">Canonical source</a><a href="#codex">Codex location</a><a href="#claude">Claude location</a><a href="#almanac">CodeAlmanac</a><a href="#decision">Correct design</a></nav></aside><main><div class="content">
+<header class="head"><p class="eyebrow">Folder placement</p><h1>Provider folders are resolved relative to the provider's working project</h1><p class="lead">For a project-scoped definition, <code class="inline">.codex</code> or <code class="inline">.claude</code> belongs at the root of the repository passed as the agent's working directory. CodeAlmanac complicates this because its definitions belong to the product, not to every user's repository.</p></header><hr class="rule">
+<section id="source"><p class="kicker">01 — Canonical source</p><h2>What CodeAlmanac owns</h2>
+<div class="tree"><span class="d">codealmanac/</span>
+<span class="c">└─</span> <span class="d">src/codealmanac/agents/</span>    <span class="note"># canonical Yoke collection</span>
+   <span class="c">├─</span> <span class="f">yoke.yaml</span>
+   <span class="c">├─</span> <span class="d">build/</span>
+   <span class="c">├─</span> <span class="d">ingest/</span>
+   <span class="c">└─</span> <span class="d">garden/</span></div>
+<div class="callout sot"><span class="clabel">Source of truth · agent intent</span><strong>The packaged Yoke collection owns the definitions.</strong> Generated provider files are projections and must never become a second hand-edited source.</div></section>
+<section id="codex"><p class="kicker">02 — Codex</p><h2>Where `.codex` goes</h2>
+<p>If Codex starts with <code class="inline">cwd=/work/acme-api</code>, project custom agents must be discoverable here:</p>
+<div class="tree"><span class="d">/work/acme-api/</span>               <span class="note"># Codex thread cwd / project root</span>
+<span class="c">├─</span> <span class="d">.codex/</span>
+<span class="c">│  ├─</span> <span class="f">config.toml</span>
+<span class="c">│  └─</span> <span class="d">agents/</span>
+<span class="c">│     ├─</span> <span class="f">build-writer.toml</span>
+<span class="c">│     └─</span> <span class="f">reviewer.toml</span>
+<span class="c">└─</span> <span class="d">.agents/skills/</span>          <span class="note"># shared skill convention</span></div>
+<figure class="code"><div class="code-wrap"><div class="code-bar"><span class="fname">/work/acme-api/.codex/agents/reviewer.toml</span><span class="ftag">generated</span></div><pre><span class="kw">name</span> = <span class="str">"reviewer"</span>
+<span class="kw">description</span> = <span class="str">"Review generated wiki pages."</span>
+<span class="kw">model</span> = <span class="str">"gpt-5.4-mini"</span>
+<span class="kw">model_reasoning_effort</span> = <span class="str">"medium"</span>
+<span class="kw">developer_instructions</span> = <span class="str">"""Return concrete findings."""</span></pre></div><figcaption><b>What to notice:</b> this is a provider-native projection, not the Yoke source.</figcaption></figure>
+<div class="docnote"><span class="dlabel">Why — per the provider surface</span>Codex app-server starts a thread with an explicit <code class="inline">cwd</code>. Native collaboration events prove child execution, but do not prove a Yoke declaration was registered. <span class="src">Source: <a class="ext" href="https://developers.openai.com/codex/app-server" target="_blank" rel="noopener">OpenAI · app-server</a></span></div></section>
+<section id="claude"><p class="kicker">03 — Claude</p><h2>Where `.claude` goes</h2>
+<p>Claude has two legitimate paths. Programmatic subagents require no file. Project filesystem agents and skills live under the Claude working project:</p>
+<div class="tree"><span class="d">/work/acme-api/</span>               <span class="note"># Claude SDK cwd / project root</span>
+<span class="c">└─</span> <span class="d">.claude/</span>
+   <span class="c">├─</span> <span class="d">agents/</span>
+   <span class="c">│  └─</span> <span class="f">reviewer.md</span>
+   <span class="c">└─</span> <span class="d">skills/</span>
+      <span class="c">└─</span> <span class="d">source-grounding/</span>
+         <span class="c">└─</span> <span class="f">SKILL.md</span></div>
+<p>Yoke's active Claude adapter passes subagents through the SDK <code class="inline">agents</code> parameter and passes the packaged Yoke root as a local plugin path for skills. It does not need to copy `.claude/agents` into the user's repository.</p>
+<div class="docnote"><span class="dlabel">Why — per the docs</span>Claude recommends programmatic subagents for SDK applications. Skills are filesystem artifacts discovered from project/user locations or loaded from a local plugin path. <span class="src"><a class="ext" href="https://code.claude.com/docs/en/agent-sdk/subagents" target="_blank" rel="noopener">Claude · SDK subagents</a> · <a class="ext" href="https://code.claude.com/docs/en/agent-sdk/skills" target="_blank" rel="noopener">SDK skills</a></span></div></section>
+<section id="almanac"><p class="kicker">04 — CodeAlmanac</p><h2>The placement conflict</h2>
+<div class="tree"><span class="d">site-packages/codealmanac/agents/</span>  <span class="note"># product-owned definitions</span>
+<span class="d">/Users/rohan/Projects/customer-repo/</span> <span class="note"># harness cwd</span></div>
+<p>For Claude SDK this is fine: definitions travel through SDK objects and plugin paths. For true Codex custom agents, generated files must be visible to the Codex project rooted at <code class="inline">customer-repo</code>. Writing them under the CodeAlmanac source checkout does nothing when Codex is working elsewhere.</p>
+<table class="matrix"><thead><tr><th>Candidate location</th><th>Works?</th><th>Problem</th></tr></thead><tbody>
+<tr><td><code class="inline">codealmanac/.codex</code></td><td>Only when CodeAlmanac is the target</td><td>Wrong project for users</td></tr>
+<tr><td><code class="inline">customer-repo/.codex</code></td><td>Yes</td><td>Pollutes and may conflict</td></tr>
+<tr><td><code class="inline">~/.codex/agents</code></td><td>Potentially global</td><td>Leaks agents and names across projects</td></tr>
+<tr><td>Per-run absolute role config</td><td>Registration accepted</td><td>Named selection not yet proven through app-server</td></tr>
+</tbody></table></section>
+<section id="decision"><p class="kicker">05 — Recommendation</p><h2>Do not silently write user repositories</h2>
+<div class="callout warn"><span class="clabel">Current gap</span>Yoke has no implemented per-run custom-agent materialization layer for Codex app-server. CodeAlmanac therefore does not currently get true named Codex custom agents from packaged Yoke subagent folders.</div>
+<p>Codex's configuration model accepts an absolute <code class="inline">agents.&lt;name&gt;.config_file</code>, so Yoke can register generated role files without creating <code class="inline">customer-repo/.codex</code>. However, registration is only half the contract: current app-server live tests could not prove that the model can select that named role. Yoke should keep prompt compilation as an explicitly weaker fallback until named selection and child-model application are observed end to end.</p>
+<p>Next: inspect the <a class="link" href="matrix.html">feature matrix</a>.</p></section>
+<footer><p>This page names exact filesystem placement.</p><p class="disc">AI-generated. Verify critical decisions independently.</p></footer>
+</div></main></div><script src="assets/wiki.js"></script></body></html>
