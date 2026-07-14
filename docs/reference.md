@@ -1532,6 +1532,27 @@ Events can carry:
 - source thread and turn ids
 - raw provider payloads
 
+### Token usage
+
+`Usage` preserves provider token categories without estimating missing values.
+Every field is `int | None`; `None` means the selected surface did not report
+that value.
+
+| Field | Meaning |
+| --- | --- |
+| `input_tokens` | Provider-reported ordinary input. For Codex this includes the cached-input subset; for Claude it excludes cache reads and cache writes. |
+| `cache_creation_input_tokens` | Claude cache-write input. Other current surfaces report `None`. |
+| `cached_input_tokens` | Provider-reported cache reads/reused input. It is a subset of Codex input, but a separate category for Claude. |
+| `output_tokens` | Provider-reported output; Codex includes the reasoning-output subset. |
+| `reasoning_output_tokens` | Separately reported Codex reasoning output. Claude Agent SDK does not expose this split. |
+| `total_tokens` | Total for the event's provider scope. Yoke sums Claude ordinary input, cache writes, cache reads, and output because Claude exposes disjoint categories. |
+| `total_processed_tokens` | A cumulative total only when the surface reports an aggregate: Codex app-server thread total, Claude final run result, or Claude background-task total. |
+| `max_tokens` | Provider-reported context-window maximum, not a configured output limit. |
+
+Do not add `cached_input_tokens` or `reasoning_output_tokens` to Codex totals:
+both are already subsets. Claude final `ResultMessage.usage` is the aggregate
+for that SDK query, so Yoke uses it as the run's final usage.
+
 ## Surfaces and capabilities
 
 Yoke models capabilities by surface, not only by provider.
@@ -1622,6 +1643,22 @@ readiness = await harness.check()
 ```
 
 It does not start an agent turn, list models, or set up credentials.
+
+Embedding applications should use the richer, also non-paid preflight before
+creating a durable run record:
+
+```python
+authentication = await harness.auth_status()
+if not authentication.ready:
+    raise RuntimeError(authentication.message)
+```
+
+`Authentication` reports provider, surface, accepted methods, selected method,
+installation, authentication, compatibility, readiness, live-test status, and
+a safe message. For an explicit Claude API key or OAuth token,
+`authenticated` remains `None`: preflight confirms that the credential is
+present without spending a model request to validate it. Gate execution on
+`ready`; do not interpret `live_tested=False` as failure.
 
 Current checks:
 

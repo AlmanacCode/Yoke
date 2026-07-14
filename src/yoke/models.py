@@ -2165,6 +2165,7 @@ class Usage(YokeModel):
     """Token usage reported by a provider."""
 
     input_tokens: int | None = None
+    cache_creation_input_tokens: int | None = None
     cached_input_tokens: int | None = None
     output_tokens: int | None = None
     reasoning_output_tokens: int | None = None

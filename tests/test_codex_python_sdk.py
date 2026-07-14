@@ -22,7 +22,7 @@ from yoke import (
     Turn,
     adapter_for,
 )
-from yoke.providers.codex_sdk import CodexPythonSdk, sdk_event, sdk_events
+from yoke.providers.codex_sdk import CodexPythonSdk, sdk_event, sdk_events, usage_dict
 
 
 class Summary(BaseModel):
@@ -75,6 +75,21 @@ def test_codex_python_sdk_reuses_app_server_rate_limit_mapping() -> None:
 
     assert event.kind is EventKind.RATE_LIMIT
     assert event.message == "rate limits updated"
+
+
+def test_codex_python_sdk_usage_object_keeps_reasoning_tokens() -> None:
+    usage = usage_dict(
+        SimpleNamespace(
+            input_tokens=10,
+            cached_input_tokens=4,
+            output_tokens=6,
+            reasoning_output_tokens=2,
+            total_tokens=16,
+        )
+    )
+
+    assert usage is not None
+    assert usage["reasoning_output_tokens"] == 2
 
 
 @pytest.mark.asyncio

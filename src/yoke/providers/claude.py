@@ -1983,11 +1983,14 @@ def task_usage(value: Any) -> tuple[Usage | None, int | None]:
         return None, None
     total_tokens = first_int_field(value, "total_tokens", "totalTokens")
     duration_ms = first_int_field(value, "duration_ms", "durationMs")
-    return Usage(total_tokens=total_tokens), duration_ms
+    return Usage(
+        total_tokens=total_tokens,
+        total_processed_tokens=total_tokens,
+    ), duration_ms
 
 
 def result_events(message: Any) -> list[Event]:
-    usage = claude_usage(getattr(message, "usage", None))
+    usage = claude_usage(getattr(message, "usage", None), aggregate=True)
     events: list[Event] = []
     structured_output = getattr(message, "structured_output", None)
     result_text = getattr(message, "result", None)
@@ -2111,26 +2114,32 @@ def deferred_tool_use_event(message: Any, deferred_tool_use: Any) -> Event:
     )
 
 
-def claude_usage(value: Any) -> Usage | None:
+def claude_usage(value: Any, *, aggregate: bool = False) -> Usage | None:
     if not isinstance(value, dict):
         return None
     input_tokens = int_field(value, "input_tokens")
+    cache_creation_input_tokens = int_field(value, "cache_creation_input_tokens")
     cached_input_tokens = first_int_field(
         value,
         "cached_input_tokens",
         "cache_read_input_tokens",
     )
     output_tokens = int_field(value, "output_tokens")
-    total = sum(
-        item
-        for item in (input_tokens, cached_input_tokens, output_tokens)
-        if item is not None
+    components = (
+        input_tokens,
+        cache_creation_input_tokens,
+        cached_input_tokens,
+        output_tokens,
     )
+    total = sum(item for item in components if item is not None)
+    total_tokens = total if any(item is not None for item in components) else None
     return Usage(
         input_tokens=input_tokens,
+        cache_creation_input_tokens=cache_creation_input_tokens,
         cached_input_tokens=cached_input_tokens,
         output_tokens=output_tokens,
-        total_tokens=total or None,
+        total_tokens=total_tokens,
+        total_processed_tokens=total_tokens if aggregate else None,
     )
 
 

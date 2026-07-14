@@ -734,6 +734,7 @@ def usage_dict(value: Any) -> dict[str, Any] | None:
             "input_tokens",
             "cached_input_tokens",
             "output_tokens",
+            "reasoning_output_tokens",
             "total_tokens",
             "total_processed_tokens",
             "max_tokens",

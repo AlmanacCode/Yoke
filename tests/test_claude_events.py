@@ -328,6 +328,7 @@ def test_claude_assistant_usage_maps_to_context_usage_event() -> None:
         content=[],
         usage={
             "input_tokens": 10,
+            "cache_creation_input_tokens": 5,
             "cache_read_input_tokens": 4,
             "output_tokens": 6,
         },
@@ -336,12 +337,14 @@ def test_claude_assistant_usage_maps_to_context_usage_event() -> None:
     event = claude_events(message)[0]
 
     assert event.kind is EventKind.CONTEXT_USAGE
-    assert event.message == "20 tokens"
+    assert event.message == "25 tokens"
     assert event.usage is not None
     assert event.usage.input_tokens == 10
+    assert event.usage.cache_creation_input_tokens == 5
     assert event.usage.cached_input_tokens == 4
     assert event.usage.output_tokens == 6
-    assert event.usage.total_tokens == 20
+    assert event.usage.total_tokens == 25
+    assert event.usage.total_processed_tokens is None
 
 
 def test_claude_result_usage_maps_to_context_usage_event_before_done() -> None:
@@ -357,7 +360,33 @@ def test_claude_result_usage_maps_to_context_usage_event_before_done() -> None:
     assert events[1].kind is EventKind.CONTEXT_USAGE
     assert events[1].usage is not None
     assert events[1].usage.total_tokens == 3
+    assert events[1].usage.total_processed_tokens == 3
     assert events[2].kind is EventKind.DONE
+
+
+def test_claude_result_usage_includes_cache_creation_tokens() -> None:
+    message = ResultMessage(
+        usage={
+            "input_tokens": 3,
+            "cache_creation_input_tokens": 20_588,
+            "cache_read_input_tokens": 0,
+            "output_tokens": 5,
+        },
+    )
+
+    usage_event = next(
+        event
+        for event in claude_events(message)
+        if event.kind is EventKind.CONTEXT_USAGE
+    )
+
+    assert usage_event.usage is not None
+    assert usage_event.usage.input_tokens == 3
+    assert usage_event.usage.cache_creation_input_tokens == 20_588
+    assert usage_event.usage.cached_input_tokens == 0
+    assert usage_event.usage.output_tokens == 5
+    assert usage_event.usage.total_tokens == 20_596
+    assert usage_event.usage.total_processed_tokens == 20_596
 
 
 def test_claude_result_errors_map_to_error_event_before_done() -> None:
@@ -610,6 +639,7 @@ def test_claude_task_progress_maps_usage_and_last_tool() -> None:
     assert event.tool_name == "Grep"
     assert event.usage is not None
     assert event.usage.total_tokens == 1234
+    assert event.usage.total_processed_tokens == 1234
     assert event.tool is not None
     assert event.tool.kind is ToolKind.SEARCH
     assert event.tool.duration_ms == 250
