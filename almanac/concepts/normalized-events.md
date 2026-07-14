@@ -27,6 +27,9 @@ sources:
   - id: capability-tests
     type: file
     path: tests/test_capabilities.py
+  - id: cost-transcript
+    type: conversation
+    path: /Users/rohan/.codex/sessions/2026/07/10/rollout-2026-07-10T19-50-43-019f4f15-9750-7373-bf99-6eb61ab7ab46.jsonl
 ---
 
 Normalized events are Yoke's provider-neutral records for activity that happens during a run or streamed session turn. The `Event` model can represent text, tool use, tool results, request events, usage, provider session ids, warnings, errors, hooks, goals, rate limits, and unknown stream activity while preserving raw provider data [@models]. This gives a [Yoke Harness](yoke-harness) one event language even when Claude and Codex emit different native message shapes.
@@ -54,6 +57,12 @@ Codex server requests are represented as request events with a default response,
 The Claude adapter maps SDK messages into the same event model. Assistant text blocks become `text`, tool-use blocks become `tool_use`, tool-result blocks become `tool_result`, thinking blocks become `tool_summary`, system messages can carry `provider_session`, stream events become `stream_event`, hook messages become `hook`, and rate-limit messages become `rate_limit` [@claude-adapter].
 
 Claude request callbacks are also normalized. A tool permission callback becomes an approval request, `AskUserQuestion` becomes a user-input request, and a Yoke `Response` is converted back into the Claude SDK permission result [@claude-adapter].
+
+## Usage Is Not Cost
+
+Yoke's usage model is token accounting. `Usage` records input, cached input, output, reasoning output, total, processed, and maximum token counts; it does not include billed dollars, provider credits, or estimated API cost [@models]. Codex app-server token updates become `context_usage` events through `parse_app_server_usage`, and Claude message or result usage becomes `context_usage` through the Claude adapter [@codex-events] [@claude-adapter].
+
+Do not treat these usage events as a cost contract. The July 2026 cost discussion confirmed that Yoke can report provider token usage, but billed or estimated cost needs a separate field split, such as provider-reported cost versus API-equivalent estimate, because subscriptions, provider credits, cache rates, and model-specific pricing do not all map to a single per-run dollar value [@cost-transcript].
 
 ## Why raw data remains
 

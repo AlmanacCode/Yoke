@@ -30,6 +30,12 @@ sources:
   - id: readiness-tests
     type: file
     path: tests/test_readiness.py
+  - id: live-folder-check
+    type: file
+    path: examples/live_folder_features.py
+  - id: live-folder-transcript
+    type: conversation
+    path: /Users/rohan/.claude/projects/-Users-rohan-Desktop-Projects-Yoke/a84c81d8-4810-458d-8469-fca93efc6ee0.jsonl
 ---
 
 Agent folders are the filesystem form of Yoke agents. They let an agent be written as files, loaded into the same `Agent` model used by the SDK, saved back from code, and grouped into collections for CLI or app use [@readme] [@loader]. The folder format is important because it gives agent authors a readable, versionable shape for instructions, skills, subagents, workflows, tools, permissions, model hints, and goals.
@@ -63,3 +69,5 @@ This means agent folders are not only prompt folders. They can carry the agent's
 Folder-authored skills and subagents cross two provider boundaries. Path-backed folder skills are provider-native on Codex app-server and Claude Python SDK: Codex app-server collects every `skills/<name>/SKILL.md` directory as a native skill root, while Claude passes skill names and plugin roots through `ClaudeAgentOptions` [@codex-skills] [@claude-adapter]. Declared subagents do not lower the same way on every surface. Readiness tests mark Codex app-server as provider-native for live collaboration-agent activity while its Yoke-declared subagents are compiled, and they mark Claude Python SDK declared subagents as native `agents` definitions with the provider `Agent` tool available [@readiness-tests].
 
 When a folder-agent smoke fails, check the status reports before assuming the folder failed to load. `status.skills` tells whether skills are native or compiled for the selected surface, and `status.subagents` separates Yoke-declared subagents from provider-native spawned-agent activity [@readiness-tests]. This distinction matters because a Codex app-server run can emit native collaboration-agent events while the folder's declared subagent map still lowers through provider files or instructions, whereas Claude SDK declared subagents are passed as provider agent definitions [@readiness-tests] [@claude-adapter].
+
+`examples/live_folder_features.py` is the live end-to-end smoke for this boundary. It loads provider-specific folder agents, checks that the packaged skill and `folder-reviewer` subagent were loaded, verifies the requested subagent model appears in the generated provider artifact, runs the agent through Codex app-server or Claude Python SDK, and requires both proof markers in the provider output [@live-folder-check]. The July 2026 live run showed both providers returning the skill and subagent markers; Codex app-server events also reported the nested run model, while Claude events did not report an effective subagent model even though the configuration and output marker succeeded [@live-folder-transcript].
