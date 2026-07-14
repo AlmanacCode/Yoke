@@ -24,6 +24,12 @@ sources:
   - id: setup-transcript
     type: conversation
     path: /Users/rohan/.codex/sessions/2026/07/12/rollout-2026-07-12T00-01-58-019f5521-fafb-7321-af60-99eaaea6fbca.jsonl
+  - id: codealmanac-pyproject
+    type: file
+    path: ../codealmanac/pyproject.toml
+  - id: codealmanac-lock
+    type: file
+    path: ../codealmanac/uv.lock
 ---
 
 `codealmanac` is the reference product integration for Yoke. Its durable boundary is that `codealmanac` owns wiki lifecycle work, run records, validation, and product events, while Yoke owns the agent definition, provider surface, and harness execution layer [@yoke-only-note]. The decision to keep `codealmanac` on Yoke-only harness adapters is recorded in [codealmanac Uses Yoke-Only Harness Adapters](../decisions/codealmanac-uses-yoke-only-harness-adapters). The current migration contract makes that boundary concrete: `codealmanac` uses Yoke-native packaged agents for build, ingest, and garden, and the adapter only loads an agent, binds it to a [Yoke Harness](../concepts/yoke-harness), invokes Yoke, and projects normalized results back into `codealmanac` lifecycle records [@integration-transcript].
@@ -55,5 +61,7 @@ Provider adapters merge this runtime state at the edge. The Codex app-server ada
 ## Release Contract
 
 `codealmanac` should depend on `almanac-yoke>=0.1.5,<0.2` for this integration shape [@integration-transcript]. Yoke's distribution name is `almanac-yoke`, while the import package remains `yoke` [@package-note]. The referenced migration verified `almanac-yoke 0.1.5` and `codealmanac 0.4.3` as the released pair, with Yoke `main` at `3d40984` and the `codealmanac` `dev` and `main` branches both at `bd4269e6` [@integration-transcript].
+
+The sibling `codealmanac` checkout still declares `codealmanac` version `0.4.3` and depends on `almanac-yoke[claude]>=0.1.5,<0.2`; its lock currently resolves `almanac-yoke` to `0.1.5` [@codealmanac-pyproject] [@codealmanac-lock]. Treat that pair as the published compatibility floor, not as the newest Yoke development version.
 
 The live proof matters because it exercised the intended boundary: a real `codealmanac` build ran through the packaged build agent and Codex app-server, created and validated 13 grounded pages, used native Codex helper agents dynamically, committed cleanly, and emitted readable normalized lifecycle events [@integration-transcript].
