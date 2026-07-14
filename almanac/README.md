@@ -27,6 +27,11 @@ collections.
 
 For architecture boundaries, read [Architecture](architecture).
 
+For architectural choices that should not be reversed accidentally, read
+[Decisions](decisions). The most important ones are
+[Provider Surfaces Are First-Class](decisions/provider-surfaces-first-class)
+and [codealmanac Uses Yoke-Only Harness Adapters](decisions/codealmanac-uses-yoke-only-harness-adapters).
+
 For execution state, read [Runs And Sessions](concepts/runs-and-sessions),
 [Normalized Events](concepts/normalized-events), and
 [Runtime Flow](architecture/runtime-flow), then use

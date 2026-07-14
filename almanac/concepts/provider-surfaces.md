@@ -23,7 +23,7 @@ sources:
     path: tests/test_capabilities.py
 ---
 
-Provider surfaces are the concrete Claude or Codex entrypoints that Yoke plans against. A provider is the family, such as `codex` or `claude`; a surface is the actual exposure path, such as `codex_app_server`, `codex_python_sdk`, `codex_cli`, or `claude_python_sdk` [@models]. Surfaces matter because Yoke treats features as surface-specific, not provider-wide [@decision].
+Provider surfaces are the concrete Claude or Codex entrypoints that Yoke plans against. A provider is the family, such as `codex` or `claude`; a surface is the actual exposure path, such as `codex_app_server`, `codex_python_sdk`, `codex_cli`, or `claude_python_sdk` [@models]. Surfaces matter because Yoke treats features as surface-specific, not provider-wide [@decision]. The architectural choice is recorded in [Provider Surfaces Are First-Class](../decisions/provider-surfaces-first-class).
 
 ## The feature boundary
 

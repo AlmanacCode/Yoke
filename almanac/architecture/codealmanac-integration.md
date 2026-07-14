@@ -26,7 +26,7 @@ sources:
     path: /Users/rohan/.codex/sessions/2026/07/12/rollout-2026-07-12T00-01-58-019f5521-fafb-7321-af60-99eaaea6fbca.jsonl
 ---
 
-`codealmanac` is the reference product integration for Yoke. Its durable boundary is that `codealmanac` owns wiki lifecycle work, run records, validation, and product events, while Yoke owns the agent definition, provider surface, and harness execution layer [@yoke-only-note]. The current migration contract makes that boundary concrete: `codealmanac` uses Yoke-native packaged agents for build, ingest, and garden, and the adapter only loads an agent, binds it to a [Yoke Harness](../concepts/yoke-harness), invokes Yoke, and projects normalized results back into `codealmanac` lifecycle records [@integration-transcript].
+`codealmanac` is the reference product integration for Yoke. Its durable boundary is that `codealmanac` owns wiki lifecycle work, run records, validation, and product events, while Yoke owns the agent definition, provider surface, and harness execution layer [@yoke-only-note]. The decision to keep `codealmanac` on Yoke-only harness adapters is recorded in [codealmanac Uses Yoke-Only Harness Adapters](../decisions/codealmanac-uses-yoke-only-harness-adapters). The current migration contract makes that boundary concrete: `codealmanac` uses Yoke-native packaged agents for build, ingest, and garden, and the adapter only loads an agent, binds it to a [Yoke Harness](../concepts/yoke-harness), invokes Yoke, and projects normalized results back into `codealmanac` lifecycle records [@integration-transcript].
 
 ## Packaged Agents Are The Boundary
 

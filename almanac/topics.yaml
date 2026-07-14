@@ -15,6 +15,10 @@ topics:
     title: Reference
     description: Exact lookup material for commands, formats, and stored contracts
     parents: []
+  - slug: decisions
+    title: Decisions
+    description: Architecturally meaningful choices and their consequences
+    parents: []
   - slug: cli
     title: CLI
     description: Shell commands and local inspection flows
