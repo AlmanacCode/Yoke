@@ -71,6 +71,28 @@ from yoke.surfaces import capabilities_for
 from yoke.workflows import native_workflow_unsupported
 
 
+def codex_login_auth_method(message: str) -> AuthMethod:
+    """Map the non-secret Codex login status to its persisted auth method."""
+
+    normalized = message.casefold()
+    if "api key" in normalized:
+        return AuthMethod.API_KEY
+    if "chatgpt" in normalized:
+        return AuthMethod.CHATGPT
+    return AuthMethod.EXTERNAL
+
+
+def codex_login_status_message(message: str) -> str:
+    """Remove masked credential fragments from successful login status text."""
+
+    method = codex_login_auth_method(message)
+    if method is AuthMethod.API_KEY:
+        return "Codex authenticated with API key"
+    if method is AuthMethod.CHATGPT:
+        return "Codex authenticated with ChatGPT"
+    return message
+
+
 class CodexAppServer:
     """Adapter for `codex app-server --listen stdio://`."""
 
@@ -159,11 +181,12 @@ class CodexAppServer:
                 message=result.message or f"codex login status exited {result.code}",
                 raw=result.stderr or result.stdout,
             )
+        message = codex_login_status_message(result.message)
         return Readiness(
             provider=self.provider,
             surface=self.surface,
             available=True,
-            message=result.message or "codex authenticated",
+            message=message or "codex authenticated",
         )
 
     async def auth_status(self, harness: Harness) -> Authentication:
@@ -171,11 +194,20 @@ class CodexAppServer:
 
         readiness = await self.check(harness)
         installed = readiness.message != "codex not found on PATH"
+        method = (
+            codex_login_auth_method(readiness.message)
+            if readiness.available
+            else None
+        )
         return Authentication(
             provider=self.provider,
             surface=self.surface,
-            methods=(AuthMethod.EXTERNAL,),
-            method=AuthMethod.EXTERNAL if readiness.available else None,
+            methods=(
+                AuthMethod.EXTERNAL,
+                AuthMethod.API_KEY,
+                AuthMethod.CHATGPT,
+            ),
+            method=method,
             installed=installed,
             authenticated=readiness.available if installed else None,
             compatible=None,

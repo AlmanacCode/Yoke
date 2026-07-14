@@ -1667,6 +1667,14 @@ ChatGPT login transport, so a completed device-code login subsequently reports
 `chatgpt`. `Authentication.methods` includes both external discovery and the
 SDK's supported persisted login flows.
 
+Codex app-server also reuses provider-persisted authentication, but login is
+performed externally with `codex login`. Its `auth_status()` parses the safe
+`codex login status` attestation: an isolated persisted API-key login reports
+`method=api_key`, while a managed ChatGPT login reports `method=chatgpt`.
+Unknown successful external modes remain `external`. Successful status messages
+are normalized so masked credential fragments are not copied into application
+records.
+
 Current checks:
 
 | Surface | Check |

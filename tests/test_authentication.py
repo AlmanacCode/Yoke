@@ -25,6 +25,7 @@ from yoke import (
 )
 from yoke.providers import claude as claude_provider
 from yoke.providers.claude import Claude, claude_options, credential_env
+from yoke.providers.codex_app_server import CodexAppServer, codex_login_auth_method
 from yoke.providers.codex_sdk import CodexPythonSdk, codex_auth_method
 from yoke.readiness import CommandCheck
 
@@ -361,6 +362,50 @@ def test_codex_sdk_maps_persisted_account_types(
 
 def test_codex_sdk_missing_account_has_no_auth_method() -> None:
     assert codex_auth_method({"account": None}) is None
+
+
+@pytest.mark.asyncio
+async def test_codex_app_auth_status_discovers_persisted_api_key_login(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_command(*args, **kwargs):
+        return CommandCheck(
+            code=0,
+            stdout="Logged in using an API key - sk-proj-***safe",
+            stderr="",
+        )
+
+    monkeypatch.setattr("yoke.providers.codex_app_server.run_command", fake_command)
+    value = harness(
+        "codex", "codex_app_server", Credentials.auto()
+    ).with_adapter(CodexAppServer())
+
+    status = await value.auth_status()
+
+    assert status.ready is True
+    assert status.authenticated is True
+    assert status.method is AuthMethod.API_KEY
+    assert status.methods == (
+        AuthMethod.EXTERNAL,
+        AuthMethod.API_KEY,
+        AuthMethod.CHATGPT,
+    )
+    assert "sk-proj" not in status.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Logged in using an API key - sk-***safe", AuthMethod.API_KEY),
+        ("Logged in using ChatGPT", AuthMethod.CHATGPT),
+        ("Codex authenticated", AuthMethod.EXTERNAL),
+    ],
+)
+def test_codex_app_maps_cli_login_status(
+    message: str,
+    expected: AuthMethod,
+) -> None:
+    assert codex_login_auth_method(message) is expected
 
 
 def test_discovery_reuses_capability_selection_and_keeps_credentials_private() -> None:
