@@ -142,7 +142,7 @@ def test_send_intercepts_a_tool_call_via_a_live_hook_bridge(
     captured_reply = {}
 
     def fake_post_message(
-        base_url, session_id, cwd, provider_id, model_id, prompt, timeout
+        base_url, session_id, cwd, provider_id, model_id, prompt, timeout, **kwargs
     ):
         reply = httpx.post(
             f"{base_url}/tool-hook",

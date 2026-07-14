@@ -260,6 +260,10 @@ def test_opencode_closing_a_fork_does_not_delete_the_parents_live_runtime(
         monkeypatch.setattr(
             "yoke.providers.opencode_server.http.fork_session", fake_fork_session
         )
+        monkeypatch.setattr(
+            "yoke.providers.opencode_server.http.update_session_permission",
+            lambda *args, **kwargs: {},
+        )
         runtime_root = tmp_path / "runtime"
         harness = Harness(
             provider="opencode",
@@ -314,6 +318,10 @@ def test_opencode_fork_carries_over_parent_instructions_marked_as_sent(
         adapter._start_session = start_session  # type: ignore[method-assign]
         monkeypatch.setattr(
             "yoke.providers.opencode_server.http.fork_session", fake_fork_session
+        )
+        monkeypatch.setattr(
+            "yoke.providers.opencode_server.http.update_session_permission",
+            lambda *args, **kwargs: {},
         )
         harness = Harness(
             provider="opencode",

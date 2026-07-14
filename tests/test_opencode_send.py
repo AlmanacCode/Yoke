@@ -56,22 +56,30 @@ def test_send_emits_provider_session_event_first(
     assert run.output == "hello"
 
 
-def test_send_prepends_agent_instructions_on_first_turn_only(
+def test_send_passes_agent_instructions_as_system_on_first_turn_only(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Regression: OpenCode's session/message API has no dedicated system-
-    # prompt field, unlike Claude/Codex. Without prepending Agent.instructions
-    # to the first turn, the model never receives its actual task
-    # description — confirmed live against a real CodeAlmanac build run,
-    # which produced only a generic clarifying question instead of doing
-    # any work.
-    sent_prompts: list[str] = []
+    # OpenCode's POST /session/:id/message has a documented `system` field
+    # (confirmed live, v1.17.15) — Agent.instructions goes through it rather
+    # than being prepended to the prompt text, keeping system and user
+    # content separate. Sent only on the session's first turn, matching the
+    # once-per-session semantics Claude/Codex use for their own native
+    # system-prompt fields.
+    sent: list[tuple[str, str | None]] = []
 
     def fake_post_message(
-        base_url, session_id, cwd, provider_id, model_id, prompt, timeout
+        base_url,
+        session_id,
+        cwd,
+        provider_id,
+        model_id,
+        prompt,
+        timeout,
+        *,
+        system=None,
     ):
-        sent_prompts.append(prompt)
+        sent.append((prompt, system))
         return {"info": {}, "parts": [{"type": "text", "text": "ok"}]}
 
     monkeypatch.setattr(http, "post_message", fake_post_message)
@@ -98,10 +106,68 @@ def test_send_prepends_agent_instructions_on_first_turn_only(
         options=RunOptions(),
     )
 
-    assert "You are a careful maintainer." in sent_prompts[0]
-    assert "turn one" in sent_prompts[0]
-    assert sent_prompts[1] == "turn two"
-    assert "You are a careful maintainer." not in sent_prompts[1]
+    assert sent[0] == ("turn one", "You are a careful maintainer.")
+    assert sent[1] == ("turn two", None)
+    assert internal.instructions_sent is True
+
+
+def test_send_keeps_instructions_unsent_when_the_first_post_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression: instructions_sent used to become True before the HTTP
+    # request succeeded, so a failed first send lost the instructions on
+    # retry — the model's very first real turn would run with no system
+    # prompt at all.
+    def failing_post_message(*args, **kwargs):
+        raise RuntimeError("connection reset")
+
+    monkeypatch.setattr(http, "post_message", failing_post_message)
+    server = OpencodeServer()
+    internal = _OpencodeSession(
+        process=_FakeProcess(),
+        session_id="ses_test123",
+        cwd=Path.cwd(),
+        environment=None,
+        db_path=tmp_path / "opencode.db",
+        instructions="You are a careful maintainer.",
+    )
+
+    run = server._send(
+        internal,
+        turn=Turn(prompt="turn one"),
+        model="openai/gpt-5",
+        options=RunOptions(),
+    )
+
+    assert run.status == RunStatus.FAILED
+    assert internal.instructions_sent is False
+
+    sent: list[tuple[str, str | None]] = []
+
+    def fake_post_message(
+        base_url,
+        session_id,
+        cwd,
+        provider_id,
+        model_id,
+        prompt,
+        timeout,
+        *,
+        system=None,
+    ):
+        sent.append((prompt, system))
+        return {"info": {}, "parts": [{"type": "text", "text": "ok"}]}
+
+    monkeypatch.setattr(http, "post_message", fake_post_message)
+    server._send(
+        internal,
+        turn=Turn(prompt="retry"),
+        model="openai/gpt-5",
+        options=RunOptions(),
+    )
+
+    assert sent == [("retry", "You are a careful maintainer.")]
 
 
 def test_send_resolves_a_pending_permission_via_the_run_level_policy(

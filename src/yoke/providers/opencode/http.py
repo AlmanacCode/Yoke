@@ -50,8 +50,36 @@ def create_session(
     return as_record(response.json())
 
 
-def list_sessions(base_url: str, timeout_seconds: float) -> tuple[JsonObject, ...]:
-    response = httpx.get(f"{base_url}/session", timeout=timeout_seconds)
+def list_sessions(
+    base_url: str,
+    timeout_seconds: float,
+    *,
+    directory: str | None = None,
+) -> tuple[JsonObject, ...]:
+    params = {"directory": directory} if directory is not None else None
+    response = httpx.get(f"{base_url}/session", params=params, timeout=timeout_seconds)
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, list):
+        return ()
+    return tuple(as_record(item) for item in payload if isinstance(item, dict))
+
+
+def list_messages(
+    base_url: str, session_id: str, timeout_seconds: float
+) -> tuple[JsonObject, ...]:
+    """List a session's stored messages via the documented history API.
+
+    GET /session/:id/message (operationId session.messages), confirmed live
+    (v1.17.15) to return every message in chronological order. No `limit` is
+    passed here — OpenCode's own `limit` keeps the most *recent* N messages,
+    which doesn't compose with offset-based pagination over the full
+    (oldest-first) order; callers slice the full result locally instead.
+    """
+
+    response = httpx.get(
+        f"{base_url}/session/{session_id}/message", timeout=timeout_seconds
+    )
     response.raise_for_status()
     payload = response.json()
     if not isinstance(payload, list):
@@ -74,6 +102,30 @@ def rename_session(
     response = httpx.patch(
         f"{base_url}/session/{session_id}",
         json={"title": title},
+        timeout=timeout_seconds,
+    )
+    response.raise_for_status()
+    return as_record(response.json())
+
+
+def update_session_permission(
+    base_url: str,
+    session_id: str,
+    timeout_seconds: float,
+    *,
+    permission: tuple[JsonObject, ...],
+) -> JsonObject:
+    """Set a session's permission ruleset via PATCH /session/:id.
+
+    Confirmed live (v1.17.15): `POST /session/:id/fork` does not inherit the
+    parent's ruleset — a forked session starts with none at all (default
+    allow) regardless of how restrictive the parent was. This PATCH endpoint
+    is the only documented way to (re)apply one after the fact.
+    """
+
+    response = httpx.patch(
+        f"{base_url}/session/{session_id}",
+        json={"permission": list(permission)},
         timeout=timeout_seconds,
     )
     response.raise_for_status()
@@ -132,14 +184,19 @@ def post_message(
     model_id: str,
     prompt: str,
     timeout_seconds: float,
+    *,
+    system: str | None = None,
 ) -> JsonObject:
+    body: JsonObject = {
+        "model": {"providerID": provider_id, "modelID": model_id},
+        "parts": [{"type": "text", "text": prompt}],
+    }
+    if system is not None:
+        body["system"] = system
     response = httpx.post(
         f"{base_url}/session/{session_id}/message",
         params={"directory": cwd_directory},
-        json={
-            "model": {"providerID": provider_id, "modelID": model_id},
-            "parts": [{"type": "text", "text": prompt}],
-        },
+        json=body,
         timeout=timeout_seconds,
     )
     response.raise_for_status()

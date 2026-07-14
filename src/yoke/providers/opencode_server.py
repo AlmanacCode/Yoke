@@ -17,6 +17,7 @@ from pathlib import Path
 
 from yoke.errors import UnsupportedFeature, YokeError
 from yoke.models import (
+    Access,
     Approval,
     Event,
     EventKind,
@@ -51,7 +52,6 @@ from yoke.options import (
     opencode_request_handler,
 )
 from yoke.providers.opencode import http
-from yoke.providers.opencode.db import query_readonly_or_empty
 from yoke.providers.opencode.failures import classify_opencode_failure
 from yoke.providers.opencode.fields import JsonObject, as_record, string_field
 from yoke.providers.opencode.hooks import (
@@ -268,8 +268,14 @@ class OpencodeServer:
         cwd: str | Path | None = None,
         include_worktrees: bool = True,
     ) -> SessionList:
+        if cursor is not None:
+            raise UnsupportedFeature("OpenCode session listing is not cursor-paged.")
+        if not include_worktrees:
+            raise UnsupportedFeature(
+                "OpenCode session listing has no worktree-exclusion filter."
+            )
         sessions = await asyncio.to_thread(
-            self._list_sessions, harness.cwd, harness.environment, limit
+            self._list_sessions, harness.cwd, harness.environment, limit, cwd
         )
         return SessionList(
             provider=self.provider, surface=self.surface, sessions=sessions
@@ -290,6 +296,8 @@ class OpencodeServer:
             harness.environment,
             session_id,
             include_messages,
+            limit,
+            offset,
         )
 
     async def rename(self, session: Session, title: str) -> SessionSummary:
@@ -318,6 +326,21 @@ class OpencodeServer:
         forked_id = string_field(record, "id")
         if forked_id is None:
             raise YokeError("opencode fork did not return a session id")
+        # OpenCode's fork endpoint does not inherit the parent session's
+        # permission ruleset — confirmed live: a session created with
+        # bash denied produced a fork with no ruleset at all (default
+        # allow), so bash ran freely on the fork despite the returned
+        # Session.permissions still claiming the parent's restricted
+        # posture. Re-apply it explicitly; PATCH /session/:id is the only
+        # documented way to set a ruleset after creation.
+        if session.permissions is not None:
+            await asyncio.to_thread(
+                http.update_session_permission,
+                internal.process.base_url,
+                forked_id,
+                OPENCODE_CHECK_REQUEST_TIMEOUT_SECONDS,
+                permission=_session_permission_block(session.permissions),
+            )
         forked = _OpencodeSession(
             process=internal.process,
             session_id=forked_id,
@@ -574,6 +597,7 @@ class OpencodeServer:
         cwd: Path,
         environment: dict[str, str],
         limit: int | None,
+        directory: str | Path | None,
     ) -> tuple[SessionSummary, ...]:
         server = start_opencode_server(
             self.command,
@@ -582,8 +606,14 @@ class OpencodeServer:
             env=environment,
         )
         try:
+            # Only filters by directory when a caller explicitly asks —
+            # preserves the existing global (unfiltered) default rather than
+            # silently narrowing every unscoped list_sessions() call to
+            # harness.cwd.
             records = http.list_sessions(
-                server.base_url, OPENCODE_RUN_REQUEST_TIMEOUT_SECONDS
+                server.base_url,
+                OPENCODE_RUN_REQUEST_TIMEOUT_SECONDS,
+                directory=str(directory) if directory is not None else None,
             )
         finally:
             server.terminate()
@@ -599,6 +629,8 @@ class OpencodeServer:
         environment: dict[str, str],
         session_id: str,
         include_messages: bool,
+        limit: int | None,
+        offset: int,
     ) -> SessionHistory:
         server = start_opencode_server(
             self.command,
@@ -610,29 +642,29 @@ class OpencodeServer:
             record = http.read_session(
                 server.base_url, session_id, OPENCODE_RUN_REQUEST_TIMEOUT_SECONDS
             )
+            messages: tuple[SessionMessage, ...] = ()
+            if include_messages:
+                # Routed through the documented GET /session/:id/message API
+                # (session.messages) rather than the private SQLite schema —
+                # also the fix for limit/offset being accepted but silently
+                # ignored: OpenCode's own `limit` keeps the most *recent* N
+                # messages, which doesn't compose with offset over the full
+                # oldest-first order, so the full list is fetched and sliced
+                # locally instead.
+                entries = http.list_messages(
+                    server.base_url, session_id, OPENCODE_RUN_REQUEST_TIMEOUT_SECONDS
+                )
+                if limit is not None:
+                    entries = entries[offset : offset + limit]
+                else:
+                    entries = entries[offset:]
+                messages = tuple(
+                    _session_message(entry, self.provider, self.surface, session_id)
+                    for entry in entries
+                )
         finally:
             server.terminate()
         summary = _session_summary(record, self.provider, self.surface)
-        messages: tuple[SessionMessage, ...] = ()
-        if include_messages:
-            db_path = self._resolve_db_path()
-            rows = query_readonly_or_empty(
-                db_path,
-                "SELECT message.id AS id, message.data AS message_data "
-                "FROM message WHERE message.session_id = ? "
-                "ORDER BY message.time_created",
-                (session_id,),
-            )
-            messages = tuple(
-                SessionMessage(
-                    provider=self.provider,
-                    surface=self.surface,
-                    session_id=session_id,
-                    id=row["id"],
-                    raw=row["message_data"],
-                )
-                for row in rows
-            )
         return SessionHistory(
             provider=self.provider,
             surface=self.surface,
@@ -763,9 +795,15 @@ class OpencodeServer:
     ) -> Run:
         provider_id, model_id = split_opencode_model(model)
         prompt = turn.prompt
-        if internal.instructions and not internal.instructions_sent:
-            prompt = f"{internal.instructions}\n\n---\n\n{turn.prompt}"
-            internal.instructions_sent = True
+        # OpenCode's POST /session/:id/message has a documented `system`
+        # field (confirmed live, v1.17.15) — pass instructions through it
+        # instead of prepending them to the prompt text, so system and user
+        # content stay separate. Only sent once, on the session's first
+        # turn; `instructions_sent` is set after the request actually
+        # succeeds (see _send_turn/_post below), not here — setting it
+        # upfront meant a failed first send silently lost the instructions
+        # on retry, since the flag was already True.
+        system = internal.instructions if not internal.instructions_sent else None
         events: list = []
         on_event = options.on_event
 
@@ -794,6 +832,7 @@ class OpencodeServer:
             return self._send_turn(
                 internal,
                 prompt,
+                system,
                 provider_id,
                 model_id,
                 options,
@@ -809,6 +848,7 @@ class OpencodeServer:
         self,
         internal: _OpencodeSession,
         prompt: str,
+        system: str | None,
         provider_id: str,
         model_id: str,
         options: RunOptions,
@@ -870,9 +910,15 @@ class OpencodeServer:
                     model_id,
                     prompt,
                     options.timeout_seconds or OPENCODE_RUN_REQUEST_TIMEOUT_SECONDS,
+                    system=system,
                 )
             except Exception as error:  # noqa: BLE001 - surfaced below
                 message_result["error"] = error
+                return
+            # Only recorded once the request actually succeeded — a failed
+            # first send must still see instructions on the next retry.
+            if system is not None:
+                internal.instructions_sent = True
 
         sender_thread = threading.Thread(target=_post, daemon=True)
         sender_thread.start()
@@ -944,11 +990,34 @@ def _session_permission_block(permissions: Permissions) -> tuple[JsonObject, ...
     confirmed live in a 2026-07-12 spike) — AUTO and NEVER both mean "don't
     ask", matching Codex's own approval_policy() mapping
     (providers/codex_app/policy.py).
+
+    `access`/`network` are also translated here, gating the same tool
+    categories `accessible_claude_tools()` (providers/claude.py) gates:
+    write/edit/apply_patch need WRITE or FULL, bash needs FULL, webfetch/
+    websearch need `network`. Without this, `Permissions(access=READ,
+    network=False, approval=NEVER)` produced a bare `* = allow` rule and the
+    session reported read-only/no-network while every tool actually ran.
+
+    Rule order matters and was confirmed live (2026-07-13 spike): OpenCode
+    resolves a later rule over an earlier one when both match, so the
+    wildcard base rule must come first and per-tool denies after it — a
+    deny listed *before* a trailing `* = allow` is silently overridden by
+    that later wildcard.
     """
 
-    if permissions.approval is Approval.ASK:
-        return http.OPENCODE_ASK_ALL_PERMISSION
-    return http.OPENCODE_ALLOW_ALL_PERMISSION
+    base_action = "ask" if permissions.approval is Approval.ASK else "allow"
+    rules: list[JsonObject] = [
+        {"permission": "*", "pattern": "*", "action": base_action}
+    ]
+    if permissions.access not in (Access.WRITE, Access.FULL):
+        for tool in ("write", "edit", "apply_patch"):
+            rules.append({"permission": tool, "pattern": "*", "action": "deny"})
+    if permissions.access is not Access.FULL:
+        rules.append({"permission": "bash", "pattern": "*", "action": "deny"})
+    if not permissions.network:
+        for tool in ("webfetch", "websearch"):
+            rules.append({"permission": tool, "pattern": "*", "action": "deny"})
+    return tuple(rules)
 
 
 def opencode_options(options: SessionOptions) -> OpencodeOptions | dict[str, object]:
@@ -992,4 +1061,21 @@ def _session_summary(
         provider_session_id=session_id or None,
         title=string_field(record, "title"),
         raw=record,
+    )
+
+
+def _session_message(
+    entry: JsonObject,
+    provider: Provider,
+    surface: str,
+    session_id: str,
+) -> SessionMessage:
+    info = as_record(entry.get("info"))
+    return SessionMessage(
+        provider=provider,
+        surface=surface,
+        session_id=session_id,
+        id=string_field(info, "id"),
+        role=string_field(info, "role"),
+        raw=entry,
     )

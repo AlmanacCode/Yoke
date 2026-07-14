@@ -836,8 +836,10 @@ FEATURE_LOWERING: dict[tuple[Provider, str, Feature], str] = {
         "Harness.sessions() calls GET /session."
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION_READ): (
-        "Harness.read_session() calls GET /session/:id, plus a read-only poll "
-        "of OpenCode's own message table for message history."
+        "Harness.read_session() calls GET /session/:id plus GET "
+        "/session/:id/message for stored history, sliced locally for "
+        "offset/limit since OpenCode's own `limit` keeps the most recent "
+        "N messages rather than the earliest N."
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION_RENAME): (
         "Harness.rename_session() and Session.rename() call PATCH /session/:id."
@@ -846,7 +848,10 @@ FEATURE_LOWERING: dict[tuple[Provider, str, Feature], str] = {
         "Session.compact() calls POST /session/:id/summarize."
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.FORK): (
-        "Session.fork() calls POST /session/:id/fork."
+        "Session.fork() calls POST /session/:id/fork, then re-applies the "
+        "parent's permission ruleset via PATCH /session/:id — confirmed "
+        "live that fork does not inherit it otherwise (a forked session "
+        "starts with no ruleset at all, i.e. default allow)."
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.INTERRUPT): (
         "Session.interrupt() calls POST /session/:id/abort."
@@ -866,8 +871,13 @@ FEATURE_LOWERING: dict[tuple[Provider, str, Feature], str] = {
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.FILESYSTEM_AGENT): (
         "Direct Yoke subagents render as agents/<name>.md markdown with "
-        "YAML frontmatter (description, mode: subagent, model), written "
-        "under the same OPENCODE_CONFIG_DIR skills use."
+        "YAML frontmatter (description, mode: subagent, model, permission), "
+        "written under the same OPENCODE_CONFIG_DIR skills use. The "
+        "subagent's own access/network posture also compiles into a "
+        "permission: block — confirmed live that a per-agent `bash: deny` "
+        "genuinely blocks the tool for that agent specifically, mirroring "
+        "how codex_agent_toml() already sandboxes a subagent from its own "
+        "Permissions.access."
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.DECLARED_SUBAGENTS): (
         "Same agents/<name>.md files as FILESYSTEM_AGENT; OpenCode "
@@ -903,10 +913,15 @@ FEATURE_LOWERING: dict[tuple[Provider, str, Feature], str] = {
         "both change what actually runs, not just what's reported."
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.PERMISSIONS): (
-        "Permissions.approval=ASK passes an ask-all session permission "
-        "block instead of allow-all; OpencodePermissionWatchdog polls "
-        "GET /permission and resolves each pending request via "
-        "POST /permission/:id/reply."
+        "Translates approval, access, and network: Permissions.approval="
+        "ASK passes an ask-all session permission block instead of "
+        "allow-all (OpencodePermissionWatchdog polls GET /permission and "
+        "resolves each pending request via POST /permission/:id/reply); "
+        "access/network gate write/edit/apply_patch, bash, and webfetch/"
+        "websearch per-tool, the same categories accessible_claude_tools() "
+        "gates for Claude. Re-applied via PATCH /session/:id on fork(), "
+        "since OpenCode's fork endpoint does not inherit the parent "
+        "session's ruleset."
     ),
     (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.REQUEST_CALLBACKS): (
         "ProviderOptions.opencode.request_handler (or .policy, a "

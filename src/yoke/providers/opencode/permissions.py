@@ -77,7 +77,6 @@ class OpencodePermissionWatchdog:
                 continue
             if string_field(record, "sessionID") != self.session_id:
                 continue
-            self._seen.add(permission_id)
             self._resolve(record, permission_id)
 
     def _resolve(self, record: JsonObject, permission_id: str) -> None:
@@ -92,8 +91,13 @@ class OpencodePermissionWatchdog:
                 self.timeout_seconds,
                 message=response.message,
             )
-        except Exception:  # noqa: BLE001 - reply failures surface on the model's turn
+        except Exception:  # noqa: BLE001 - reply failures retried next poll tick
             return
+        # Only mark seen once the reply actually lands — a transient reply
+        # failure used to be swallowed after the ID was recorded, so the
+        # watchdog never retried it and the in-flight message stayed blocked
+        # until its own outer timeout.
+        self._seen.add(permission_id)
         self.on_event(
             event.model_copy(
                 update={"kind": EventKind.REQUEST_RESOLVED, "response": response}

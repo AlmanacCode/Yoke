@@ -197,6 +197,42 @@ def test_watchdog_run_stops_promptly_and_does_a_final_poll(
     assert len(polled) == 1
 
 
+def test_watchdog_retries_a_permission_whose_reply_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression: the ID used to be added to `_seen` before the reply was
+    # attempted, so a transient respond_permission() failure was swallowed
+    # and the permission was never retried — the in-flight message stayed
+    # blocked until its own outer timeout instead of being re-resolved on
+    # the next poll tick.
+    monkeypatch.setattr(
+        http, "list_permissions", lambda base_url, timeout: (_RECORD,)
+    )
+    attempts = []
+
+    def flaky_respond(base_url, permission_id, reply, timeout, **kwargs):
+        attempts.append(permission_id)
+        if len(attempts) == 1:
+            raise RuntimeError("transient network error")
+
+    monkeypatch.setattr(http, "respond_permission", flaky_respond)
+    events = []
+    watchdog = OpencodePermissionWatchdog(
+        base_url="http://127.0.0.1:0",
+        session_id="ses_root",
+        on_event=events.append,
+        request_handler=RequestPolicy.allow_all(),
+    )
+
+    watchdog._poll_once()
+    assert attempts == ["per_abc"]
+    assert events == []
+
+    watchdog._poll_once()
+    assert attempts == ["per_abc", "per_abc"]
+    assert len(events) == 1
+
+
 def test_watchdog_swallows_transient_http_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

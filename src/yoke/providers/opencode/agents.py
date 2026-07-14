@@ -16,7 +16,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from yoke.models import Agent
+from yoke.models import Access, Agent
 from yoke.providers.codex_agents import description_for, instructions_for, slug
 
 
@@ -57,8 +57,42 @@ def opencode_agent_markdown(name: str, agent: Agent) -> str:
     ]
     if agent.model:
         lines.append(f"model: {yaml_string(agent.model)}")
+    permission = _agent_permission_config(agent)
+    if permission:
+        lines.append("permission:")
+        for tool, action in permission.items():
+            lines.append(f"  {tool}: {action}")
     lines.extend(["---", "", instructions_for(agent)])
     return "\n".join(lines) + "\n"
+
+
+def _agent_permission_config(agent: Agent) -> dict[str, str]:
+    """Translate this subagent's own access/network posture into OpenCode's
+    per-agent `permission:` frontmatter key (confirmed live: a `bash: deny`
+    entry here genuinely blocks the tool, independent of whatever the
+    parent session's own ruleset allows).
+
+    Mirrors `codex_agent_toml`'s `sandbox_mode(agent.permissions)` — the
+    same subagent-level `access` field already gates Codex's sandbox, so a
+    subagent left at the default `Permissions()` (access=READ) already gets
+    Codex's "read-only" treatment; without this, the identical subagent
+    compiled to OpenCode had no restriction at all, inheriting whatever the
+    parent session/process happened to allow. Approval is intentionally not
+    translated here, matching Codex's own subagent compiler, since there is
+    no live per-request approval signal at subagent granularity.
+    """
+
+    permissions = agent.permissions
+    denies: dict[str, str] = {}
+    if permissions.access not in (Access.WRITE, Access.FULL):
+        for tool in ("write", "edit", "apply_patch"):
+            denies[tool] = "deny"
+    if permissions.access is not Access.FULL:
+        denies["bash"] = "deny"
+    if not permissions.network:
+        for tool in ("webfetch", "websearch"):
+            denies[tool] = "deny"
+    return denies
 
 
 def yaml_string(value: str) -> str:
