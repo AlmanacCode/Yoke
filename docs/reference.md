@@ -1688,8 +1688,9 @@ uv run --with claude-agent-sdk python examples/live_folder_features.py
 ```
 
 The check verifies that each requested model reaches the provider-specific
-agent definition. Current provider events do not attest the effective model
-identity of the nested run, so the script reports that distinction explicitly.
+agent definition. Codex app-server events attest the effective model of the
+nested run; Claude events currently do not, so the script reports that
+distinction explicitly.
 
 The first command checks surface readiness. The JSON form prints readiness-only
 records for agents and integration checks. `--surface provider:surface` filters
