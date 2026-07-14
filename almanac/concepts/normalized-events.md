@@ -24,6 +24,9 @@ sources:
   - id: codex-event-tests
     type: file
     path: tests/test_codex_app_events.py
+  - id: claude-event-tests
+    type: file
+    path: tests/test_claude_events.py
   - id: capability-tests
     type: file
     path: tests/test_capabilities.py
@@ -61,6 +64,8 @@ Claude request callbacks are also normalized. A tool permission callback becomes
 ## Usage Is Not Cost
 
 Yoke's usage model is token accounting. `Usage` records input, cached input, output, reasoning output, total, processed, and maximum token counts; it does not include billed dollars, provider credits, or estimated API cost [@models]. Codex app-server token updates become `context_usage` events through `parse_app_server_usage`, and Claude message or result usage becomes `context_usage` through the Claude adapter [@codex-events] [@claude-adapter].
+
+Usage aggregation is provider-shaped. Codex app-server `thread/tokenUsage/updated` notifications carry a `last` usage object and a `total` usage object; Yoke maps the `last` object to `Usage.total_tokens` for the current update and maps the `total` object to `Usage.total_processed_tokens` as the aggregate snapshot [@codex-events]. A consumer should not sum `total_processed_tokens` across Codex usage events, because each value is already an aggregate at that point in the turn. Claude usage events come from message or result usage objects, and the collected `Run.usage` is the latest usage event observed while collecting the run [@claude-adapter] [@claude-event-tests]. A caller that stores both normalized events and the final run should not add `Run.usage` on top of the usage events; it is the run-level projection of the event stream, not an extra chargeable item [@claude-adapter].
 
 Do not treat these usage events as a cost contract. The July 2026 cost discussion confirmed that Yoke can report provider token usage, but billed or estimated cost needs a separate field split, such as provider-reported cost versus API-equivalent estimate, because subscriptions, provider credits, cache rates, and model-specific pricing do not all map to a single per-run dollar value [@cost-transcript].
 
