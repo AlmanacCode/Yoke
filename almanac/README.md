@@ -42,6 +42,8 @@ For execution state, read [Runs And Sessions](concepts/runs-and-sessions),
 [CLI And Run Storage](reference/cli-and-run-storage) for exact shell behavior.
 Together they explain the difference between live conversations, collected run
 results, event streams, and `.yoke/runs/` snapshots.
+When a local CLI run needs inspection, use
+[Debug CLI Runs](guides/debug-cli-runs) as the task path.
 
 For product embedding, read
 [codealmanac Integration](architecture/codealmanac-integration). It records the

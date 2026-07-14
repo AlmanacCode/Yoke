@@ -15,6 +15,10 @@ topics:
     title: Reference
     description: Exact lookup material for commands, formats, and stored contracts
     parents: []
+  - slug: guides
+    title: Guides
+    description: Task-oriented procedures for operating and debugging Yoke
+    parents: []
   - slug: decisions
     title: Decisions
     description: Architecturally meaningful choices and their consequences
@@ -22,7 +26,7 @@ topics:
   - slug: cli
     title: CLI
     description: Shell commands and local inspection flows
-    parents: [reference]
+    parents: [reference, guides]
   - slug: authoring
     title: Authoring
     description: Filesystem-authored agents, skills, subagents, workflows, and collections

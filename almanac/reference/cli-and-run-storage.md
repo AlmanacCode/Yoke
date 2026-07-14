@@ -32,6 +32,7 @@ sources:
 The Yoke CLI is the shell surface for folder-authored agents. It loads a named agent from a collection folder, binds it to a [Yoke Harness](../concepts/yoke-harness), runs a command, and stores the result in a local `.yoke` run store when the command produces an execution result [@cli]. This makes CLI runs inspectable without changing the provider-native transcript locations that Claude or Codex may maintain themselves [@reference].
 
 For the architecture behind this command surface, read [Runtime Flow](../architecture/runtime-flow).
+For a task-oriented inspection path, read [Debug CLI Runs](../guides/debug-cli-runs).
 
 ## Commands that execute work
 
