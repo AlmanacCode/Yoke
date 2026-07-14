@@ -92,7 +92,9 @@ class CodexPythonSdk:
         )
 
     async def auth_status(self, harness: Harness) -> Authentication:
-        methods = harness.auth_methods()
+        methods = tuple(
+            dict.fromkeys((*harness.auth_methods(), *harness.login_methods()))
+        )
         try:
             sdk = openai_codex()
         except ImportError:
@@ -177,7 +179,7 @@ class CodexPythonSdk:
         client = sdk.AsyncCodex(config=self._codex_config(sdk))
         try:
             async with client as codex:
-                await codex.account(refresh_token=False)
+                account = await codex.account(refresh_token=False)
         except Exception:
             return Authentication(
                 provider=self.provider,
@@ -190,11 +192,24 @@ class CodexPythonSdk:
                 ready=False,
                 message="Codex runtime is installed but authentication is unavailable",
             )
+        method = codex_auth_method(account)
+        if method is None:
+            return Authentication(
+                provider=self.provider,
+                surface=self.surface,
+                methods=methods,
+                method=None,
+                installed=True,
+                authenticated=False,
+                compatible=None,
+                ready=False,
+                message="Codex runtime has no active account",
+            )
         return Authentication(
             provider=self.provider,
             surface=self.surface,
             methods=methods,
-            method=harness.credentials.method,
+            method=method,
             installed=True,
             authenticated=True,
             compatible=None,
@@ -718,6 +733,27 @@ def sdk_value(value: Any) -> Any:
             if not key.startswith("_")
         }
     return value
+
+
+def codex_auth_method(value: Any) -> AuthMethod | None:
+    """Return the persisted authentication method reported by Codex."""
+
+    response = sdk_value(value)
+    if not isinstance(response, dict):
+        return None
+    account = response.get("account")
+    while isinstance(account, dict) and "root" in account:
+        account = account["root"]
+    if not isinstance(account, dict):
+        return None
+    account_type = account.get("type")
+    if account_type == "apiKey":
+        return AuthMethod.API_KEY
+    if account_type == "chatgpt":
+        return AuthMethod.CHATGPT
+    if isinstance(account_type, str) and account_type:
+        return AuthMethod.EXTERNAL
+    return None
 
 
 def usage_dict(value: Any) -> dict[str, Any] | None:

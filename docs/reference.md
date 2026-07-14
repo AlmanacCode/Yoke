@@ -1660,6 +1660,13 @@ a safe message. For an explicit Claude API key or OAuth token,
 present without spending a model request to validate it. Gate execution on
 `ready`; do not interpret `live_tested=False` as failure.
 
+Codex Python SDK login is provider-persisted. After `Harness.login(...)`, call
+`auth_status()` on the same or a new Harness: Yoke reads `codex.account()` and
+reports the active persisted method as `api_key` or `chatgpt`. Device code is a
+ChatGPT login transport, so a completed device-code login subsequently reports
+`chatgpt`. `Authentication.methods` includes both external discovery and the
+SDK's supported persisted login flows.
+
 Current checks:
 
 | Surface | Check |

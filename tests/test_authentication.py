@@ -25,7 +25,7 @@ from yoke import (
 )
 from yoke.providers import claude as claude_provider
 from yoke.providers.claude import Claude, claude_options, credential_env
-from yoke.providers.codex_sdk import CodexPythonSdk
+from yoke.providers.codex_sdk import CodexPythonSdk, codex_auth_method
 from yoke.readiness import CommandCheck
 
 
@@ -274,12 +274,93 @@ async def test_codex_sdk_rejects_runtime_key_without_persisting_login(
     assert "provider-secret-detail" not in unknown.model_dump_json()
 
 
+@pytest.mark.asyncio
+async def test_codex_sdk_auth_status_discovers_persisted_api_key_login(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = SimpleNamespace()
+
+    class Client:
+        def __init__(self, config=None):
+            self.login_values = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return None
+
+        async def login_api_key(self, value):
+            self.login_values.append(value)
+
+        async def account(self, **kwargs):
+            return SimpleNamespace(
+                account=SimpleNamespace(
+                    root=SimpleNamespace(type="apiKey"),
+                ),
+                requires_openai_auth=True,
+            )
+
+    module.AsyncCodex = Client
+    module.__version__ = "0.1.0b2"
+    module.ApprovalMode = SimpleNamespace(deny_all="deny", auto_review="auto")
+    module.Sandbox = SimpleNamespace(
+        full_access="full", workspace_write="write", read_only="read"
+    )
+    monkeypatch.setitem(sys.modules, "openai_codex", module)
+
+    async def fake_command(*args, **kwargs):
+        return CommandCheck(code=0, stdout="codex 1", stderr="")
+
+    monkeypatch.setattr("yoke.providers.codex_sdk.run_command", fake_command)
+    value = harness(
+        "codex", "codex_python_sdk", Credentials.auto()
+    ).with_adapter(CodexPythonSdk(codex_bin="/bin/codex"))
+
+    login = await value.login(AuthMethod.API_KEY, api_key="sentinel-key")
+    status = await value.auth_status()
+
+    assert login.success is True
+    assert login.method is AuthMethod.API_KEY
+    assert status.ready is True
+    assert status.authenticated is True
+    assert status.method is AuthMethod.API_KEY
+    assert status.methods == (
+        AuthMethod.EXTERNAL,
+        AuthMethod.API_KEY,
+        AuthMethod.CHATGPT,
+        AuthMethod.DEVICE_CODE,
+    )
+    assert "sentinel-key" not in status.model_dump_json()
+
+
 def test_oauth_token_is_honestly_unavailable_for_codex_sdk() -> None:
     value = harness(
         "codex", "codex_python_sdk", Credentials.oauth_token("sentinel-oauth")
     )
 
     assert AuthMethod.OAUTH_TOKEN not in value.auth_methods()
+
+
+@pytest.mark.parametrize(
+    ("account_type", "expected"),
+    [
+        ("apiKey", AuthMethod.API_KEY),
+        ("chatgpt", AuthMethod.CHATGPT),
+        ("amazonBedrock", AuthMethod.EXTERNAL),
+    ],
+)
+def test_codex_sdk_maps_persisted_account_types(
+    account_type: str,
+    expected: AuthMethod,
+) -> None:
+    response = {"account": {"type": account_type}}
+
+    assert codex_auth_method(response) is expected
+
+
+def test_codex_sdk_missing_account_has_no_auth_method() -> None:
+    assert codex_auth_method({"account": None}) is None
 
 
 def test_discovery_reuses_capability_selection_and_keeps_credentials_private() -> None:
