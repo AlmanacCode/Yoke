@@ -1680,6 +1680,17 @@ uv run --with claude-agent-sdk python scripts/smoke_harnesses.py --surface claud
 uv run --with claude-agent-sdk python scripts/smoke_harnesses.py --surface claude:sdk --run-claude-subagents
 ```
 
+To exercise the complete folder contract on Codex and Claude concurrently,
+including a packaged skill, a packaged subagent, and a subagent model, run:
+
+```bash
+uv run --with claude-agent-sdk python examples/live_folder_features.py
+```
+
+The check verifies that each requested model reaches the provider-specific
+agent definition. Current provider events do not attest the effective model
+identity of the nested run, so the script reports that distinction explicitly.
+
 The first command checks surface readiness. The JSON form prints readiness-only
 records for agents and integration checks. `--surface provider:surface` filters
 readiness checks and accepts the same aliases as `Harness`, such as `codex:app`
