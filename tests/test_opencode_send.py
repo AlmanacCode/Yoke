@@ -56,16 +56,22 @@ def test_send_emits_provider_session_event_first(
     assert run.output == "hello"
 
 
-def test_send_passes_agent_instructions_as_system_on_first_turn_only(
+def test_send_passes_agent_instructions_as_system_on_every_turn(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # OpenCode's POST /session/:id/message has a documented `system` field
     # (confirmed live, v1.17.15) — Agent.instructions goes through it rather
     # than being prepended to the prompt text, keeping system and user
-    # content separate. Sent only on the session's first turn, matching the
-    # once-per-session semantics Claude/Codex use for their own native
-    # system-prompt fields.
+    # content separate.
+    #
+    # Regression: this used to be sent only on the session's first turn, on
+    # the assumption OpenCode retains it session-side like Claude/Codex's
+    # native system-prompt fields. Confirmed live it does not —
+    # LLMRequest.prepare() reads `system` from the current message only, so
+    # a second turn without it ran with no system prompt at all, and every
+    # forked session (which never resends it) got none whatsoever. Sent on
+    # every turn now.
     sent: list[tuple[str, str | None]] = []
 
     def fake_post_message(
@@ -107,18 +113,13 @@ def test_send_passes_agent_instructions_as_system_on_first_turn_only(
     )
 
     assert sent[0] == ("turn one", "You are a careful maintainer.")
-    assert sent[1] == ("turn two", None)
-    assert internal.instructions_sent is True
+    assert sent[1] == ("turn two", "You are a careful maintainer.")
 
 
-def test_send_keeps_instructions_unsent_when_the_first_post_fails(
+def test_send_resends_instructions_after_a_failed_turn(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Regression: instructions_sent used to become True before the HTTP
-    # request succeeded, so a failed first send lost the instructions on
-    # retry — the model's very first real turn would run with no system
-    # prompt at all.
     def failing_post_message(*args, **kwargs):
         raise RuntimeError("connection reset")
 
@@ -141,7 +142,6 @@ def test_send_keeps_instructions_unsent_when_the_first_post_fails(
     )
 
     assert run.status == RunStatus.FAILED
-    assert internal.instructions_sent is False
 
     sent: list[tuple[str, str | None]] = []
 

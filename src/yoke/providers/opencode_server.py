@@ -114,13 +114,10 @@ class _OpencodeSession:
     # Persisted the same way as seen_part_ids, so a permission answered on an
     # earlier turn isn't rediscovered and re-resolved on a later one.
     seen_permission_ids: set[str] = field(default_factory=set)
-    # OpenCode's session/message API has no dedicated system-prompt field
-    # (unlike Claude's system_prompt or Codex app-server's developer
-    # instructions) — Agent.instructions is prepended to the first turn's
-    # prompt text instead. Without this, the model receives only the bare
-    # task prompt and never learns what it's actually supposed to do.
+    # POST /session/:id/message's `system` field is per-message, not
+    # session-persistent (confirmed live) — sent on every turn from this,
+    # not tracked as a one-time flag.
     instructions: str | None = None
-    instructions_sent: bool = False
     # Session-level provider.opencode options (mirrors CodexAppServer's
     # thread.provider_options): a later turn's RunOptions.provider.opencode
     # overrides this, but falls back here when a turn doesn't set one.
@@ -347,13 +344,11 @@ class OpencodeServer:
             cwd=internal.cwd,
             environment=internal.environment,
             db_path=internal.db_path,
-            # A fork already carries the parent conversation's context
-            # server-side, so re-sending instructions on the fork's first
-            # turn would be redundant — mark instructions_sent=True rather
-            # than leaving instructions=None, which would look like they
-            # were never sent at all and isn't the intent here.
+            # `system` is per-message, not persisted server-side (see _send),
+            # so the fork must keep sending it on every turn just like the
+            # parent did — carrying it over here, not marking it as already
+            # sent.
             instructions=internal.instructions,
-            instructions_sent=True,
             # Same reasoning as instructions: a fork should keep answering
             # permissions the way the parent session was configured to,
             # not silently fall back to "no handler configured" default-deny.
@@ -798,12 +793,18 @@ class OpencodeServer:
         # OpenCode's POST /session/:id/message has a documented `system`
         # field (confirmed live, v1.17.15) — pass instructions through it
         # instead of prepending them to the prompt text, so system and user
-        # content stay separate. Only sent once, on the session's first
-        # turn; `instructions_sent` is set after the request actually
-        # succeeds (see _send_turn/_post below), not here — setting it
-        # upfront meant a failed first send silently lost the instructions
-        # on retry, since the flag was already True.
-        system = internal.instructions if not internal.instructions_sent else None
+        # content stay separate.
+        #
+        # Regression: this used to be sent only once, on the session's
+        # first turn, on the (wrong) assumption that OpenCode retains it
+        # session-side like a persistent system prompt. Confirmed live
+        # (2026-07-14): it does not — LLMRequest.prepare() reads `system`
+        # from the *current* message only, so a second turn sent without it
+        # runs with no system prompt at all, and every fork (which marked
+        # instructions_sent=True to avoid "re-sending") never got the
+        # instructions in the first place. Sent on every turn instead; no
+        # instructions_sent state needed anymore.
+        system = internal.instructions
         events: list = []
         on_event = options.on_event
 
@@ -914,11 +915,6 @@ class OpencodeServer:
                 )
             except Exception as error:  # noqa: BLE001 - surfaced below
                 message_result["error"] = error
-                return
-            # Only recorded once the request actually succeeded — a failed
-            # first send must still see instructions on the next retry.
-            if system is not None:
-                internal.instructions_sent = True
 
         sender_thread = threading.Thread(target=_post, daemon=True)
         sender_thread.start()

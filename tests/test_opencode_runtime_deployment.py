@@ -289,15 +289,13 @@ def test_opencode_closing_a_fork_does_not_delete_the_parents_live_runtime(
     asyncio.run(exercise())
 
 
-def test_opencode_fork_carries_over_parent_instructions_marked_as_sent(
+def test_opencode_fork_carries_over_parent_instructions(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    # Regression: fork() previously omitted `instructions`/`instructions_sent`
-    # entirely, so a forked session's first send() would look like
-    # instructions were never sent (instructions_sent defaults to False)
-    # while also never actually sending them, since the parent's
-    # instructions were dropped rather than copied over.
+    # Regression: fork() previously omitted `instructions` entirely, so a
+    # forked session's own turns ran with no system prompt at all, since
+    # the parent's instructions were dropped rather than copied over.
     async def exercise() -> None:
         adapter = OpencodeServer()
         process = FakeOpencodeProcess()
@@ -335,7 +333,6 @@ def test_opencode_fork_carries_over_parent_instructions_marked_as_sent(
 
         forked_internal = adapter._sessions[forked.id]
         assert forked_internal.instructions == "be helpful"
-        assert forked_internal.instructions_sent is True
 
         await adapter.close(forked)
         await adapter.close(parent)
