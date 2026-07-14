@@ -41,7 +41,7 @@ When no explicit surface is set, `profile_for` uses provider defaults, and `sele
 
 Capabilities are expressed as features with support levels. The `Feature` enum includes one-shot runs, sessions, streaming, structured output, model listing, login, permissions, request events, subagents, skills, plugins, hooks, MCP, goals, interrupts, forks, workflows, native workflows, and experimental APIs [@capabilities].
 
-Each feature has a support value: `native`, `compiled`, `emulated`, `unsupported`, or `unknown` [@capabilities]. Reports can also include notes, lowering descriptions, recipes, and evidence for a feature on a surface [@surfaces].
+Each feature has a support value: `native`, `compiled`, `emulated`, `unsupported`, or `unknown` [@capabilities]. Reports can also include notes, lowering descriptions, recipes, and evidence for a feature on a surface [@surfaces]. The runtime selection rules are covered in [Capability Planning](../architecture/capability-planning).
 
 Feature support also changes how Yoke explains product-facing promises. The README says skills may be native skill roots on the Codex app-server but compiled to files on other surfaces, Codex app-server subagents are compiled into guidance to use native `spawn_agent`, goals are native state only on the Codex app-server, and workflows are portable Yoke constructs across the listed surfaces [@readme]. These are not marketing distinctions; they are the support levels and lowering descriptions that `harness.explain()` exposes through the capability matrix [@surfaces].
 

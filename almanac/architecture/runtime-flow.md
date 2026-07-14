@@ -41,6 +41,8 @@ features, then calls the adapter's `run(...)` method [@models] [@ports]. The
 adapter owns the provider protocol from that point: Claude SDK messages, Codex
 app-server notifications, Codex SDK events, and Codex CLI JSONL output all enter
 Yoke through adapter code rather than through product services [@ports].
+The surface selection and rejection rules for those feature checks are detailed
+in [Capability Planning](capability-planning).
 
 Streaming follows the same boundary. `Harness.stream(...)` creates or resumes a
 session, asks the adapter to stream one turn, and yields normalized events

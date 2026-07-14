@@ -27,6 +27,10 @@ collections.
 
 For architecture boundaries, read [Architecture](architecture).
 
+For provider feature checks, read
+[Capability Planning](architecture/capability-planning). It explains how agent
+and option requirements resolve to a concrete provider surface before execution.
+
 For architectural choices that should not be reversed accidentally, read
 [Decisions](decisions). The most important ones are
 [Provider Surfaces Are First-Class](decisions/provider-surfaces-first-class)
