@@ -44,4 +44,4 @@ A stored record keeps metadata such as kind, provider, surface, status, cwd, age
 
 ## Workflow runs
 
-Workflows have their own result model, `WorkflowRun`. It records the workflow name, run mode, optional run id, provider, surface, status, step results, traces, output, data, and failure [@models]. When stored, `RunStore` marks the record kind as `workflow` and derives the provider session id from the first workflow step that has one [@store].
+Workflows have their own result model, `WorkflowRun`. It records the workflow name, run mode, optional run id, provider, surface, status, step results, traces, output, data, and failure [@models]. When stored, `RunStore` marks the record kind as `workflow` and derives the provider session id from the first workflow step that has one [@store]. See [Workflows](workflows) for the orchestration model that produces those results.

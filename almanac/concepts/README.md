@@ -28,6 +28,9 @@ normalized events explain the shared stream records that connect provider
 activity to stored or embedded execution state. [Runtime Flow](../architecture/runtime-flow)
 connects both concepts to harness execution and `.yoke` snapshots.
 
+Read [Workflows](workflows) when a change touches multi-step harness work,
+workflow folders, native workflow references, or workflow result storage.
+
 ## Authoring And Knowledge
 
 [Agent Folders](agent-folders) is the entrypoint for filesystem-authored

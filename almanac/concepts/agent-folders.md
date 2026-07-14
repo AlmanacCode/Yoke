@@ -56,7 +56,7 @@ The writer protects folder identity. Workflow names and step names must round-tr
 
 Folders support several workflow shapes. The loader can read YAML workflows, Markdown step folders, `workflow.py` Python programs, `script.js` provider-native scripts, script paths, and native workflow names [@loader]. Portable Markdown step workflows become `Step` objects with a prompt, agent name, dependencies, optional output schema, and optional run options [@loader].
 
-This means agent folders are not only prompt folders. They can carry the agent's orchestration shape while still staying in the same neutral Yoke model used by code [@reference].
+This means agent folders are not only prompt folders. They can carry the agent's orchestration shape while still staying in the same neutral Yoke model used by code [@reference]. [Workflows](workflows) explains the difference between portable step workflows and provider-native workflow artifacts.
 
 ## Provider lowering checks
 

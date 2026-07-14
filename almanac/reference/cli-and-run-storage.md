@@ -37,7 +37,7 @@ For the architecture behind this command surface, read [Runtime Flow](../archite
 
 `yoke run <collection> <agent> <prompt>` loads `yoke.yaml` from the collection folder, resolves the named agent, creates a harness with the CLI `--provider` value or the collection `default_provider`, executes one prompt, records the result, prints the run id, and then prints output when present [@cli] [@cli-tests]. The command accepts `--cwd` for the harness working directory and `--store` for the root that contains `.yoke`-style run records [@cli].
 
-`yoke workflow <collection> <agent> <workflow> [prompt]` uses the same collection loading path, but calls `Harness.workflow(...)` and records the returned workflow result [@cli]. Its flags map onto `WorkflowOptions`: `--native`, `--resume`, `--concurrency`, `--channel`, and `--fail-fast` or `--no-fail-fast` [@cli]. The workflow input is either the positional prompt or JSON from `--args`; passing both is rejected, and invalid JSON in `--args` exits before the provider run starts [@cli].
+`yoke workflow <collection> <agent> <workflow> [prompt]` uses the same collection loading path, but calls `Harness.workflow(...)` and records the returned workflow result [@cli]. Its flags map onto `WorkflowOptions`: `--native`, `--resume`, `--concurrency`, `--channel`, and `--fail-fast` or `--no-fail-fast` [@cli]. The workflow input is either the positional prompt or JSON from `--args`; passing both is rejected, and invalid JSON in `--args` exits before the provider run starts [@cli]. See [Workflows](../concepts/workflows) for the difference between portable step workflows and native workflow requests.
 
 ## Commands that inspect or prepare
 

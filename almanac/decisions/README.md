@@ -15,9 +15,12 @@ change may reverse an existing boundary rather than only extend it.
 Start with [Provider Surfaces Are First-Class](provider-surfaces-first-class)
 before changing capability planning, defaults, or surface naming. It records
 why Yoke checks features against exact Claude and Codex surfaces instead of
-treating a provider name as enough information.
+treating a provider name as enough information. For the current model, read
+[Provider Surfaces](../concepts/provider-surfaces) and
+[Runtime Flow](../architecture/runtime-flow).
 
 Read [codealmanac Uses Yoke-Only Harness Adapters](codealmanac-uses-yoke-only-harness-adapters)
 before changing the product integration boundary. It records why `codealmanac`
 keeps lifecycle work in the product while routing Claude and Codex execution
-through Yoke.
+through Yoke. For the current architecture, read
+[codealmanac Integration](../architecture/codealmanac-integration).

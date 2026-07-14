@@ -31,11 +31,15 @@ topics:
     title: Runtime
     description: Runs, sessions, events, and stored execution state
     parents: [concepts, architecture]
+  - slug: workflows
+    title: Workflows
+    description: Portable and provider-native multi-step harness orchestration
+    parents: [concepts, runtime, authoring]
   - slug: integration
     title: Integration
     description: Product boundaries that embed Yoke in another system
     parents: [architecture]
   - slug: knowledge
     title: Knowledge
-    description: Reusable factual context, maintained knowledge, and agent knowledge dependencies
+    description: Proposed knowledge packaging and maintained factual context for agents
     parents: [concepts, integration]
