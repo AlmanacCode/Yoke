@@ -35,6 +35,10 @@ topics:
     title: Runtime
     description: Runs, sessions, events, and stored execution state
     parents: [concepts, architecture]
+  - slug: provider-surfaces
+    title: Provider Surfaces
+    description: Concrete Claude and Codex entrypoints used for capability planning
+    parents: [runtime, architecture]
   - slug: workflows
     title: Workflows
     description: Portable and provider-native multi-step harness orchestration

@@ -1,7 +1,7 @@
 ---
 title: "Provider Surfaces Are First-Class"
 summary: "Yoke treats provider surfaces as the unit of capability planning because Claude and Codex expose different features through different entrypoints."
-topics: [decisions, architecture, runtime]
+topics: [decisions, architecture, runtime, provider-surfaces]
 sources:
   - id: decision-note
     type: file

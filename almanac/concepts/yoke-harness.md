@@ -1,7 +1,7 @@
 ---
 title: "Yoke Harness"
 summary: "Yoke Harness is the provider-neutral language that binds an agent definition to a concrete Claude or Codex surface."
-topics: [concepts, architecture, runtime]
+topics: [concepts, architecture, runtime, provider-surfaces]
 sources:
   - id: readme
     type: file

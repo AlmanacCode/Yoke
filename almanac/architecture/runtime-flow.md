@@ -1,7 +1,7 @@
 ---
 title: "Runtime Flow"
 summary: "Runtime flow explains how a Yoke harness turns prompts into runs, sessions, normalized events, and optional .yoke snapshots."
-topics: [architecture, runtime]
+topics: [architecture, runtime, provider-surfaces]
 sources:
   - id: readme
     type: file

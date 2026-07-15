@@ -1,7 +1,7 @@
 ---
 title: "Provider Surfaces"
 summary: "Provider surfaces are concrete Claude or Codex entrypoints whose capabilities form Yoke's feature boundary."
-topics: [concepts, architecture, runtime]
+topics: [concepts, architecture, runtime, provider-surfaces]
 sources:
   - id: readme
     type: file

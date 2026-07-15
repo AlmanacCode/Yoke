@@ -1,7 +1,7 @@
 ---
 title: "Capability Planning"
 summary: "Capability planning is the harness step that turns agent and option requirements into a concrete provider surface plan before execution."
-topics: [architecture, runtime]
+topics: [architecture, runtime, provider-surfaces]
 sources:
   - id: capabilities
     type: file
