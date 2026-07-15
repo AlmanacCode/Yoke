@@ -27,9 +27,15 @@ sources:
   - id: runtime-deployment-tests
     type: file
     path: tests/test_runtime_deployments.py
+  - id: codex-app-server
+    type: file
+    path: src/yoke/providers/codex_app_server.py
   - id: provider-audit
     type: file
     path: docs/provider-truth-audit-2026-07-11/worklog.md
+  - id: codex-startup-transcript
+    type: conversation
+    path: /Users/rohan/.codex/sessions/2026/07/10/rollout-2026-07-10T19-50-43-019f4f15-9750-7373-bf99-6eb61ab7ab46.jsonl
 ---
 
 # Runtime Flow
@@ -83,6 +89,26 @@ can be immutable and session-scoped, but resumability needs durable metadata
 that is safe to keep after the temporary files are removed [@provider-audit].
 That keeps the provider projection reproducible without treating generated
 files as source material.
+
+## Codex App-Server Startup State
+
+The Codex app-server adapter starts `codex app-server --listen stdio://`, sends
+`initialize`, then starts, resumes, lists, reads, renames, or uses a thread
+through JSON-RPC [@codex-app-server]. Each process receives the harness
+environment, so an embedding caller can point several Yoke sessions at the same
+`CODEX_HOME` and therefore the same Codex auth, config, and state files
+[@codex-app-server].
+
+A July 2026 investigation found that this startup path can race before the first
+thread RPC when multiple stdio app-server processes initialize against the same
+Codex home [@codex-startup-transcript]. The important boundary is not the
+runtime deployment directory: the shared state is Codex's own home and auth
+database, while Yoke's generated provider projection remains session-scoped
+[@runtime-deployment] [@codex-startup-transcript]. Future fixes should
+serialize process startup through `initialize` or add a narrow transient retry
+around that phase; they should not duplicate `CODEX_HOME` trees, because that
+would fork the external authentication and configuration state that Yoke is
+supposed to reuse [@codex-startup-transcript].
 
 ## Sessions And Runs
 
