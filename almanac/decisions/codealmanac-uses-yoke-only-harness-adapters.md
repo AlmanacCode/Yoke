@@ -36,9 +36,10 @@ owning direct Claude or Codex orchestration. The default product composition
 maps the Codex harness kind to `codex:app` and the Claude harness kind to
 `claude:sdk` through Yoke-backed adapters [@boundary-note].
 
-The hosted path stays layered as `usealmanac -> codealmanac lifecycle -> Yoke
--> Claude/Codex`, unless hosted product state later needs direct
-provider-surface selection or Yoke capability reports [@boundary-note].
+Applications that embed `codealmanac` should keep the same layer boundary:
+application lifecycle -> `codealmanac` lifecycle -> Yoke -> Claude/Codex.
+They should call Yoke directly only if they need provider-surface selection or
+Yoke capability reports as their own product state [@boundary-note].
 
 ## Consequences
 
