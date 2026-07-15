@@ -39,6 +39,12 @@ sources:
   - id: provider-audit
     type: file
     path: docs/provider-truth-audit-2026-07-11/worklog.md
+  - id: runtime-deployment
+    type: file
+    path: src/yoke/providers/runtime_deployment.py
+  - id: runtime-deployment-tests
+    type: file
+    path: tests/test_runtime_deployments.py
 ---
 
 # Agent Folders
@@ -74,6 +80,8 @@ This means agent folders are not only prompt folders. They can carry the agent's
 Folder-authored skills and subagents cross two provider boundaries. Path-backed folder skills are provider-native on Codex app-server and Claude Python SDK: Codex app-server collects every `skills/<name>/SKILL.md` directory as a native skill root, while Claude passes skill names and plugin roots through `ClaudeAgentOptions` [@codex-skills] [@claude-adapter]. Declared subagents do not lower the same way on every surface. Readiness tests mark Codex app-server as provider-native for live collaboration-agent activity while its Yoke-declared subagents are compiled, and they mark Claude Python SDK declared subagents as native `agents` definitions with the provider `Agent` tool available [@readiness-tests].
 
 When a folder-agent smoke fails, check the status reports before assuming the folder failed to load. `status.skills` tells whether skills are native or compiled for the selected surface, and `status.subagents` separates Yoke-declared subagents from provider-native spawned-agent activity [@readiness-tests]. This distinction matters because a Codex app-server run can emit native collaboration-agent events while the folder's declared subagent map still lowers through provider files or instructions, whereas Claude SDK declared subagents are passed as provider agent definitions [@readiness-tests] [@claude-adapter].
+
+Do not confuse durable bundle export with runtime deployment. `agent.bundle(...).write(...)` writes provider files because the caller asked for a project export [@reference]. Live Claude SDK and Codex app-server runs instead create temporary provider projections under a `runtime_root` outside the harness working directory, then clean those files up when the owning session closes or startup fails [@runtime-deployment] [@runtime-deployment-tests]. [Runtime Flow](../architecture/runtime-flow) explains that session-scoped boundary.
 
 Codex named-role behavior has two boundaries. Yoke can register absolute
 custom-agent files through Codex configuration, and current Codex source has a
