@@ -21,6 +21,15 @@ sources:
   - id: store
     type: file
     path: src/yoke/store.py
+  - id: runtime-deployment
+    type: file
+    path: src/yoke/providers/runtime_deployment.py
+  - id: runtime-deployment-tests
+    type: file
+    path: tests/test_runtime_deployments.py
+  - id: provider-audit
+    type: file
+    path: docs/provider-truth-audit-2026-07-11/worklog.md
 ---
 
 # Runtime Flow
@@ -49,6 +58,31 @@ session, asks the adapter to stream one turn, and yields normalized events
 instead of waiting for a collected run result [@models] [@ports]. This gives
 callers two shapes for the same provider activity: a collected run for normal
 execution, or an event iterator when the product needs live updates.
+
+## Runtime Deployments
+
+Some provider-native features require files even when the canonical Yoke agent
+is an in-memory model. Claude SDK and Codex app-server runs therefore create a
+runtime deployment: an isolated provider projection under a temporary
+`runtime_root` outside `Harness.cwd` [@runtime-deployment] [@runtime-deployment-tests].
+The deployment writes provider files such as Codex custom-agent TOML, generated
+skill roots, role-specific skill roots, and Claude local plugin files, then the
+adapter passes those paths to the provider process for the live run
+[@runtime-deployment].
+
+The deployment is runtime state, not authored configuration. `runtime_root` is
+excluded from harness and session serialization, must be outside `cwd`, and is
+cleaned up when the owning session closes or when startup fails
+[@runtime-deployment-tests]. A later deployment reclaims only stale
+`yoke-<provider>-<pid>-...` directories whose owner process is gone, so cleanup
+does not delete authored provider files or unrelated cache directories
+[@runtime-deployment] [@runtime-deployment-tests].
+
+The provider truth audit records the reason for this boundary: runtime files
+can be immutable and session-scoped, but resumability needs durable metadata
+that is safe to keep after the temporary files are removed [@provider-audit].
+That keeps the provider projection reproducible without treating generated
+files as source material.
 
 ## Sessions And Runs
 
