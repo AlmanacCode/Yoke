@@ -38,6 +38,8 @@ sources:
     path: /Users/rohan/.claude/projects/-Users-rohan-Desktop-Projects-Yoke/a84c81d8-4810-458d-8469-fca93efc6ee0.jsonl
 ---
 
+# Agent Folders
+
 Agent folders are the filesystem form of Yoke agents. They let an agent be written as files, loaded into the same `Agent` model used by the SDK, saved back from code, and grouped into collections for CLI or app use [@readme] [@loader]. The folder format is important because it gives agent authors a readable, versionable shape for instructions, skills, subagents, workflows, tools, permissions, model hints, and goals.
 
 ## Folder shape

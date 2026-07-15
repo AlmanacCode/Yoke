@@ -17,6 +17,8 @@ sources:
     path: src/yoke/loader.py
 ---
 
+# Knowledge Packages
+
 Knowledge packages are the proposed Yoke primitive for reusable factual context. A skill tells an agent how to perform a task; a knowledge package tells the agent what facts, policies, prior decisions, or domain material to use while performing it [@knowledge-transcript]. The separation matters because knowledge changes when reality changes, while skills change when a procedure changes [@knowledge-transcript].
 
 ## Current Boundary

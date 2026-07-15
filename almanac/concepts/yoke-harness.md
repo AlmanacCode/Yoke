@@ -1,7 +1,7 @@
 ---
 title: "Yoke Harness"
 summary: "Yoke Harness is the provider-neutral language that binds an agent definition to a concrete Claude or Codex surface."
-topics: [concepts, architecture]
+topics: [concepts, architecture, runtime]
 sources:
   - id: readme
     type: file
@@ -19,6 +19,8 @@ sources:
     type: file
     path: src/yoke/cli.py
 ---
+
+# Yoke Harness
 
 Yoke Harness is the repo's provider-neutral way to run an agent on a real coding harness. A `Harness` binds an `Agent`, a provider such as Claude or Codex, a concrete provider surface, and a working directory; it then exposes one-shot runs, sessions, streaming, workflows, status, model selection, and capability planning through one Python object [@models]. The point is not to hide provider differences. Yoke keeps provider mechanics behind adapter ports while giving product code a stable language for the parts it owns [@ports].
 

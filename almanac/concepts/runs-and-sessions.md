@@ -14,6 +14,8 @@ sources:
     path: docs/notes/0099-provider-session-id-is-separate-from-session-id.md
 ---
 
+# Runs And Sessions
+
 Runs and sessions are related but separate runtime concepts in Yoke. A `Run` is the result of one execution: provider, surface, status, output, structured data, events, session, usage, and failure details [@models]. A `Session` is a handle for an ongoing or resumable provider conversation, with a Yoke live id, an optional provider-persisted id, agent context, working directory, permissions, and goal state [@models]. `RunStore` persists run or workflow snapshots under `.yoke/runs/` [@store].
 
 ## Runs

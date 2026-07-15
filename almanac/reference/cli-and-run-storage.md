@@ -29,6 +29,8 @@ sources:
     path: /Users/rohan/.codex/sessions/2026/07/10/rollout-2026-07-10T19-50-43-019f4f15-9750-7373-bf99-6eb61ab7ab46.jsonl
 ---
 
+# CLI And Run Storage
+
 The Yoke CLI is the shell surface for folder-authored agents. It loads a named agent from a collection folder, binds it to a [Yoke Harness](../concepts/yoke-harness), runs a command, and stores the result in a local `.yoke` run store when the command produces an execution result [@cli]. This makes CLI runs inspectable without changing the provider-native transcript locations that Claude or Codex may maintain themselves [@reference].
 
 For the architecture behind this command surface, read [Runtime Flow](../architecture/runtime-flow).

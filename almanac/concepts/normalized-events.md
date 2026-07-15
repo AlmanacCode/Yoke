@@ -35,6 +35,8 @@ sources:
     path: /Users/rohan/.codex/sessions/2026/07/10/rollout-2026-07-10T19-50-43-019f4f15-9750-7373-bf99-6eb61ab7ab46.jsonl
 ---
 
+# Normalized Events
+
 Normalized events are Yoke's provider-neutral records for activity that happens during a run or streamed session turn. The `Event` model can represent text, tool use, tool results, request events, usage, provider session ids, warnings, errors, hooks, goals, rate limits, and unknown stream activity while preserving raw provider data [@models]. This gives a [Yoke Harness](yoke-harness) one event language even when Claude and Codex emit different native message shapes.
 
 ## Event kinds
