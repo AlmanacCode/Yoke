@@ -24,6 +24,10 @@ Read [Capability Planning](capability-planning) when a change adds or changes
 features that depend on the selected provider surface. It explains how agent
 and option requirements become a surface plan before provider execution starts.
 
+Read [Workflows](../concepts/workflows) when runtime changes touch multi-step
+agent orchestration. That page explains which workflow shapes are portable Yoke
+execution and which require provider-native surface support.
+
 Read [Provider Surfaces](../concepts/provider-surfaces) when runtime behavior
 depends on the exact Claude or Codex entrypoint. That concept page is the
 architecture-facing map for capability planning.

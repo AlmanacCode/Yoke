@@ -25,6 +25,9 @@ For filesystem-authored agents, read [Agent Folders](concepts/agent-folders).
 Use it before changing folder agents, skills, subagents, workflows, or named
 collections.
 
+For multi-step agent work, read [Workflows](concepts/workflows). It separates
+portable Yoke step DAGs from provider-native workflow artifacts.
+
 For architecture boundaries, read [Architecture](architecture).
 
 For provider feature checks, read
