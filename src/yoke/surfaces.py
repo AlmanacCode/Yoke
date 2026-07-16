@@ -368,6 +368,8 @@ def feature_recipes(
 def default_surface(provider: Provider) -> Surface:
     if provider is Provider.CLAUDE:
         return Surface.CLAUDE_PYTHON_SDK
+    if provider is Provider.OPENCODE:
+        return Surface.OPENCODE_SERVER
     return Surface.CODEX_APP_SERVER
 
 
@@ -400,6 +402,7 @@ SURFACE_CHANNELS: dict[tuple[Provider, str], Channel] = {
     (Provider.CODEX, Surface.CODEX_PYTHON_SDK): Channel.SDK,
     (Provider.CODEX, Surface.CODEX_TYPESCRIPT_SDK): Channel.SDK,
     (Provider.CODEX, Surface.CODEX_APP_SERVER): Channel.APP_SERVER,
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER): Channel.APP_SERVER,
 }
 
 
@@ -411,6 +414,7 @@ SURFACE_RUNTIMES: dict[tuple[Provider, str], str] = {
     (Provider.CODEX, Surface.CODEX_PYTHON_SDK): "codex_app_server",
     (Provider.CODEX, Surface.CODEX_TYPESCRIPT_SDK): "codex_sdk",
     (Provider.CODEX, Surface.CODEX_APP_SERVER): "codex_app_server",
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER): "opencode_server",
 }
 
 
@@ -447,6 +451,13 @@ SURFACE_EVIDENCE: dict[tuple[Provider, str], tuple[str, ...]] = {
     (Provider.CODEX, Surface.CODEX_APP_SERVER): (
         "https://developers.openai.com/codex/app-server",
         "https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER): (
+        "https://opencode.ai/docs/server/",
+        "https://opencode.ai/docs/skills/",
+        "https://opencode.ai/docs/mcp-servers/",
+        "https://opencode.ai/docs/config/",
+        "https://opencode.ai/docs/providers/",
     ),
 }
 
@@ -613,6 +624,61 @@ FEATURE_EVIDENCE: dict[tuple[Provider, str, Feature], tuple[str, ...]] = {
         "https://developers.openai.com/codex/app-server",
         "https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md",
     ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION_LIST): (
+        "https://opencode.ai/docs/server/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION_READ): (
+        "https://opencode.ai/docs/server/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION_RENAME): (
+        "https://opencode.ai/docs/server/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION_COMPACT): (
+        "https://opencode.ai/docs/server/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.FORK): (
+        "https://opencode.ai/docs/server/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.INTERRUPT): (
+        "https://opencode.ai/docs/server/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.MODELS): (
+        "https://opencode.ai/docs/server/",
+        "https://opencode.ai/docs/providers/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.LOGIN): (
+        "https://opencode.ai/docs/server/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SKILLS): (
+        "https://opencode.ai/docs/skills/",
+        "https://opencode.ai/docs/config/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.FILESYSTEM_AGENT): (
+        "https://opencode.ai/docs/agents/",
+        "https://opencode.ai/docs/config/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.DECLARED_SUBAGENTS): (
+        "https://opencode.ai/docs/agents/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.INLINE_SUBAGENTS): (
+        "https://opencode.ai/docs/server/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.STREAMING): (
+        "https://opencode.ai/docs/server/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.MCP): (
+        "https://opencode.ai/docs/mcp-servers/",
+        "https://opencode.ai/docs/config/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.PLUGINS): (
+        "https://opencode.ai/docs/plugins/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.HOOKS): (
+        "https://opencode.ai/docs/plugins/",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.PERMISSIONS): (
+        "https://opencode.ai/docs/server/",
+    ),
 }
 
 
@@ -765,6 +831,109 @@ FEATURE_LOWERING: dict[tuple[Provider, str, Feature], str] = {
     (Provider.CODEX, Surface.CODEX_CLI, Feature.GOAL_LOOP): (
         "Codex /goal is provider-native interactive behavior; Yoke's codex_cli "
         "adapter remains a bounded codex exec wrapper."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION_LIST): (
+        "Harness.sessions() calls GET /session."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION_READ): (
+        "Harness.read_session() calls GET /session/:id plus GET "
+        "/session/:id/message for stored history, sliced locally for "
+        "offset/limit since OpenCode's own `limit` keeps the most recent "
+        "N messages rather than the earliest N."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION_RENAME): (
+        "Harness.rename_session() and Session.rename() call PATCH /session/:id."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION_COMPACT): (
+        "Session.compact() calls POST /session/:id/summarize."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.FORK): (
+        "Session.fork() calls POST /session/:id/fork, then re-applies the "
+        "parent's permission ruleset via PATCH /session/:id — confirmed "
+        "live that fork does not inherit it otherwise (a forked session "
+        "starts with no ruleset at all, i.e. default allow)."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.INTERRUPT): (
+        "Session.interrupt() calls POST /session/:id/abort."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.MODELS): (
+        "GET /config/providers lists provider/model pairs OpenCode can route to."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.LOGIN): (
+        "harness.login('api_key', api_key=...) calls PUT /auth/:id. OAuth "
+        "authorize/callback exists in the API but is not wired in this "
+        "adapter yet."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SKILLS): (
+        "Yoke skills render as SKILL.md files under a Yoke-owned deployment "
+        "directory; OPENCODE_CONFIG_DIR points OpenCode at it without "
+        "touching the user's real project."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.FILESYSTEM_AGENT): (
+        "Direct Yoke subagents render as agents/<name>.md markdown with "
+        "YAML frontmatter (description, mode: subagent, model, permission), "
+        "written under the same OPENCODE_CONFIG_DIR skills use. The "
+        "subagent's own access/network posture also compiles into a "
+        "permission: block — confirmed live that a per-agent `bash: deny` "
+        "genuinely blocks the tool for that agent specifically, mirroring "
+        "how codex_agent_toml() already sandboxes a subagent from its own "
+        "Permissions.access."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.DECLARED_SUBAGENTS): (
+        "Same agents/<name>.md files as FILESYSTEM_AGENT; OpenCode "
+        "auto-discovers them from OPENCODE_CONFIG_DIR, no explicit "
+        "registration call is needed."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.INLINE_SUBAGENTS): (
+        "OpenCode's built-in `task` tool spawns a child session; Yoke "
+        "normalizes the spawn/settle lifecycle into AgentCall event payloads."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.STREAMING): (
+        "Yoke polls OpenCode's own SQLite part/message tables while a turn is "
+        "in flight and emits events as new terminal parts appear; OpenCode's "
+        "SSE stream was found unreliable for this in a prior live spike."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.MCP): (
+        "Yoke renders agent.options['mcp_servers'] as {\"mcp\": {...}} JSON "
+        "and passes it via OPENCODE_CONFIG_CONTENT, OpenCode's highest-"
+        "precedence config source. OpenCode has no runtime add-server "
+        "endpoint, so servers must be known before the session starts."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.PLUGINS): (
+        "agent.options['opencode_plugins'] (name -> raw JS source) writes "
+        "plugin/<name>.js files under OPENCODE_CONFIG_DIR; Yoke passes the "
+        "source through unmodified rather than generating or validating it."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.HOOKS): (
+        "A generated tool.execute.before plugin calls a local HTTP bridge "
+        "(OpencodeHookBridge) that resolves each tool call through "
+        "ProviderOptions.opencode.request_handler/policy, the same "
+        "RequestPolicy/Response contract used for permissions — confirmed "
+        "live that argument mutation (Response.updated_input) and denial "
+        "both change what actually runs, not just what's reported."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.PERMISSIONS): (
+        "Translates approval, access, and network: Permissions.approval="
+        "ASK passes an ask-all session permission block instead of "
+        "allow-all (OpencodePermissionWatchdog polls GET /permission and "
+        "resolves each pending request via POST /permission/:id/reply); "
+        "access/network gate write/edit/apply_patch, bash, and webfetch/"
+        "websearch per-tool, the same categories accessible_claude_tools() "
+        "gates for Claude. Re-applied via PATCH /session/:id on fork(), "
+        "since OpenCode's fork endpoint does not inherit the parent "
+        "session's ruleset."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.REQUEST_CALLBACKS): (
+        "ProviderOptions.opencode.request_handler (or .policy, a "
+        "RequestPolicy) is called with the same (event, default) -> "
+        "Response contract as Codex app-server's request_handler."
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.REQUEST_EVENTS): (
+        "GET /permission lists pending permissions across sessions — "
+        "confirmed live and non-deprecated, unlike "
+        "/session/:id/permissions/:permissionID which this adapter used "
+        "to target. Polled on its own thread alongside the DB-poll "
+        "progress watchdog, same poll-not-SSE architecture."
     ),
 }
 
@@ -983,6 +1152,43 @@ FEATURE_RECIPES: dict[tuple[Provider, str, Feature], tuple[str, ...]] = {
     ),
     (Provider.CODEX, Surface.CODEX_APP_SERVER, Feature.EXPERIMENTAL_API): (
         "CodexAppServerOptions(experimental_api=True)",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.ONE_SHOT): (
+        'await Harness(provider="opencode", agent=agent, cwd=repo).run(prompt)',
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION): (
+        'session = await Harness(provider="opencode", agent=agent, cwd=repo).start()',
+        "await session.run(prompt)",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION_LIST): (
+        "sessions = await harness.sessions()",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION_READ): (
+        "history = await harness.read_session(session_id)",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION_COMPACT): (
+        "await session.compact()",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SESSION_RENAME): (
+        "renamed = await harness.rename_session(session_id, title)",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.STREAMING): (
+        "RunOptions(on_event=callback)",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.MODELS): (
+        "models = await harness.models()",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.LOGIN): (
+        'await harness.login("api_key", api_key=...)',
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.INTERRUPT): (
+        "await session.interrupt()",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.FORK): (
+        "fork = await session.fork()",
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER, Feature.SKILLS): (
+        "Agent(skills=[Skill(name=..., instructions=...)])",
     ),
 }
 
@@ -1530,6 +1736,138 @@ MATRIX: dict[tuple[Provider, str], Capabilities] = {
                 Support.NATIVE,
                 "Yoke initializes Codex app-server with capabilities.experimentalApi "
                 "so experimental JSON-RPC methods and fields can be used.",
+            ),
+        }
+    ),
+    (Provider.OPENCODE, Surface.OPENCODE_SERVER): Capabilities.from_map(
+        {
+            Feature.ONE_SHOT: Support.NATIVE,
+            Feature.SESSION: Support.NATIVE,
+            Feature.SESSION_LIST: (Support.NATIVE, "GET /session."),
+            Feature.SESSION_READ: (
+                Support.NATIVE,
+                "GET /session/:id plus a read-only poll of OpenCode's own "
+                "message table.",
+            ),
+            Feature.SESSION_RESUME: (
+                Support.UNKNOWN,
+                "OpenCode sessions are addressed by id, but resuming a prior "
+                "session into a fresh Harness.start() call is unconfirmed.",
+            ),
+            Feature.SESSION_COMPACT: (Support.NATIVE, "POST /session/:id/summarize."),
+            Feature.SESSION_RENAME: (Support.NATIVE, "PATCH /session/:id."),
+            Feature.SESSION_TAG: (
+                Support.UNSUPPORTED,
+                "No documented session tag concept.",
+            ),
+            Feature.STREAMING: (
+                Support.EMULATED,
+                "Poll-based, not OpenCode's native SSE stream, which a prior "
+                "live spike found unreliable for this purpose.",
+            ),
+            Feature.RUN_EVENT_CALLBACKS: (
+                Support.EMULATED,
+                "RunOptions.on_event is driven by the DB-poll watchdog, not a "
+                "native provider event stream.",
+            ),
+            Feature.STRUCTURED_OUTPUT: (
+                Support.UNSUPPORTED,
+                "No documented schema-constrained output API.",
+            ),
+            Feature.MODELS: (Support.NATIVE, "GET /config/providers."),
+            Feature.LOGIN: (
+                Support.NATIVE,
+                "PUT /auth/:id sets api_key credentials; OAuth authorize/"
+                "callback exists in the API but is not wired in this adapter.",
+            ),
+            Feature.PERMISSIONS: (
+                Support.NATIVE,
+                "Permissions.approval=ASK passes an ask-all session "
+                "permission block (AUTO/NEVER still pass allow-all); "
+                "pending permissions are resolved live (see REQUEST_EVENTS).",
+            ),
+            Feature.REQUEST_CALLBACKS: (
+                Support.COMPILED,
+                "ProviderOptions.opencode.request_handler/policy answer "
+                "pending permissions the same RequestPolicy/Response "
+                "contract Codex app-server and Claude use.",
+            ),
+            Feature.CODEX_PERMISSIONS: Support.UNSUPPORTED,
+            Feature.CLAUDE_PERMISSIONS: Support.UNSUPPORTED,
+            Feature.FILESYSTEM_AGENT: (
+                Support.COMPILED,
+                "Direct Yoke subagents compile into agents/<name>.md "
+                "markdown files with YAML frontmatter under the same "
+                "OPENCODE_CONFIG_DIR used for skills; nested subagents-of-"
+                "subagents are not compiled (OpenCode documents no nested "
+                "invocation model to target).",
+            ),
+            Feature.INLINE_SUBAGENTS: (
+                Support.NATIVE,
+                "The built-in `task` tool spawns a child session, discovered "
+                "and normalized by the DB-poll watchdog.",
+            ),
+            Feature.DECLARED_SUBAGENTS: (
+                Support.COMPILED,
+                "Yoke subagents compile to agents/<name>.md with "
+                "`mode: subagent`; OpenCode auto-discovers them from "
+                "OPENCODE_CONFIG_DIR, invocation remains model-driven "
+                "(@mention or delegation).",
+            ),
+            Feature.COLLAB_AGENT_TOOLS: Support.UNSUPPORTED,
+            Feature.COLLABORATION_MODE: Support.UNSUPPORTED,
+            Feature.SKILLS: (
+                Support.NATIVE,
+                "OPENCODE_CONFIG_DIR points OpenCode at a Yoke-generated "
+                "skills/<name>/SKILL.md directory without touching the "
+                "user's real project.",
+            ),
+            Feature.PLUGINS: (
+                Support.COMPILED,
+                "agent.options['opencode_plugins'] (name -> raw JS source) "
+                "compiles into plugin/<name>.js files under the same "
+                "OPENCODE_CONFIG_DIR skills/agents use — pure pass-through, "
+                "Yoke does not generate or validate the plugin's contents.",
+            ),
+            Feature.HOOKS: (
+                Support.COMPILED,
+                "A generated tool.execute.before plugin (OpencodeHookBridge) "
+                "relays each tool call to a local HTTP bridge, resolved via "
+                "ProviderOptions.opencode.request_handler/policy — confirmed "
+                "live: argument mutation and denial both actually change "
+                "what runs. The bridge itself is deployed only once, when a "
+                "handler/policy is configured at session start (a later "
+                "per-turn RunOptions.provider.opencode cannot retroactively "
+                "deploy it); once deployed, each turn's own "
+                "RunOptions.provider.opencode *does* override which handler "
+                "answers, same fallback order as permission resolution.",
+            ),
+            Feature.MCP: (
+                Support.COMPILED,
+                "agent.options['mcp_servers'] compiles into an "
+                "OPENCODE_CONFIG_CONTENT env var (`{\"mcp\": {...}}`), merged "
+                "over the user's own opencode.json at OpenCode's highest "
+                "config precedence — no runtime add-server API exists.",
+            ),
+            Feature.GOAL: Support.UNSUPPORTED,
+            Feature.GOAL_LOOP: Support.UNSUPPORTED,
+            Feature.MUTABLE_GOAL: Support.UNSUPPORTED,
+            Feature.READABLE_GOAL: Support.UNSUPPORTED,
+            Feature.INTERRUPT: (Support.NATIVE, "POST /session/:id/abort."),
+            Feature.FORK: (Support.NATIVE, "POST /session/:id/fork."),
+            Feature.WORKFLOW: (
+                Support.EMULATED,
+                "Yoke executes workflow steps as multiple session sends.",
+            ),
+            Feature.NATIVE_WORKFLOW: Support.UNSUPPORTED,
+            Feature.EXPERIMENTAL_API: Support.UNSUPPORTED,
+            Feature.REQUEST_EVENTS: (
+                Support.COMPILED,
+                "GET /permission (confirmed live, non-deprecated) is polled "
+                "the same way OpencodeProgressWatchdog polls SQLite; pending "
+                "permissions are resolved via POST /permission/:id/reply — "
+                "no SSE dependency needed, disproving this adapter's earlier "
+                "assumption that discovery required it.",
             ),
         }
     ),

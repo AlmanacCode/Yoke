@@ -1,0 +1,256 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+
+import pytest
+
+from yoke import Agent
+from yoke.models import EventKind, Turn
+from yoke.options import OpencodeOptions, ProviderOptions, RunOptions, SessionOptions
+from yoke.policies import RequestPolicy
+from yoke.providers.opencode import http
+from yoke.providers.opencode_server import OpencodeServer, _OpencodeSession
+from yoke.providers.runtime_deployment import deploy_runtime
+
+
+@dataclass
+class _FakeProcess:
+    base_url: str = "http://127.0.0.1:0"
+
+    def terminate(self) -> None:
+        pass
+
+
+def test_maybe_deploy_hook_bridge_returns_none_without_a_handler(
+    tmp_path: Path,
+) -> None:
+    adapter = OpencodeServer()
+    deployment = deploy_runtime(Agent(instructions="x"), "opencode", tmp_path)
+    try:
+        bridge = adapter._maybe_deploy_hook_bridge(SessionOptions(), deployment)
+        assert bridge is None
+        assert deployment.opencode_config_dir is None
+    finally:
+        deployment.cleanup()
+
+
+def test_maybe_deploy_hook_bridge_writes_the_plugin_and_starts_a_server(
+    tmp_path: Path,
+) -> None:
+    adapter = OpencodeServer()
+    deployment = deploy_runtime(Agent(instructions="x"), "opencode", tmp_path)
+    try:
+        options = SessionOptions(
+            provider=ProviderOptions(
+                opencode=OpencodeOptions(policy=RequestPolicy.allow_all())
+            )
+        )
+        bridge = adapter._maybe_deploy_hook_bridge(options, deployment)
+        assert bridge is not None
+        assert deployment.opencode_config_dir is not None
+        plugin_path = (
+            deployment.opencode_config_dir / "plugin" / "yoke_tool_hook.js"
+        )
+        assert plugin_path.is_file()
+        assert "tool.execute.before" in plugin_path.read_text()
+        assert bridge.base_url.startswith("http://127.0.0.1:")
+    finally:
+        bridge.stop()
+        deployment.cleanup()
+
+
+def test_resolve_hook_request_routes_to_the_turns_active_handler_and_emits(
+    tmp_path: Path,
+) -> None:
+    adapter = OpencodeServer()
+    events = []
+    internal = _OpencodeSession(
+        process=_FakeProcess(),
+        session_id="ses_test123",
+        cwd=Path.cwd(),
+        environment=None,
+        db_path=tmp_path / "opencode.db",
+        provider_options=OpencodeOptions(policy=RequestPolicy.allow_all()),
+        current_emit=events.append,
+        current_request_handler=RequestPolicy.deny_all("no"),
+    )
+    adapter._sessions["ses_test123"] = internal
+
+    response = adapter._resolve_hook_request(
+        "ses_test123",
+        {"sessionID": "ses_test123", "callID": "call_1", "tool": "bash", "args": {}},
+    )
+
+    assert response.decision == "deny"
+    assert len(events) == 1
+    assert events[0].kind == EventKind.REQUEST_RESOLVED
+    assert events[0].response is response
+
+
+def test_resolve_hook_request_ignores_session_level_policy_outside_a_turn(
+    tmp_path: Path,
+) -> None:
+    # Regression: _resolve_hook_request used to fall back to
+    # internal.provider_options (fixed at session-start) directly, so a
+    # per-turn RunOptions.provider.opencode override was silently ignored
+    # for hooks even though the identical override worked for permissions.
+    # Resolution now always goes through internal.current_request_handler,
+    # set fresh by _send() each turn — outside any turn it's None, and a
+    # hook call in that state defaults to allow rather than reaching for
+    # the stale session-level policy.
+    adapter = OpencodeServer()
+    internal = _OpencodeSession(
+        process=_FakeProcess(),
+        session_id="ses_test123",
+        cwd=Path.cwd(),
+        environment=None,
+        db_path=tmp_path / "opencode.db",
+        provider_options=OpencodeOptions(policy=RequestPolicy.deny_all("no")),
+    )
+    adapter._sessions["ses_test123"] = internal
+
+    response = adapter._resolve_hook_request(
+        "ses_test123",
+        {"sessionID": "ses_test123", "callID": "call_1", "tool": "bash", "args": {}},
+    )
+
+    assert response.decision == "allow"
+
+
+def test_resolve_hook_request_defaults_to_allow_for_an_unknown_session() -> None:
+    adapter = OpencodeServer()
+
+    response = adapter._resolve_hook_request(
+        "ses_unknown",
+        {"sessionID": "ses_unknown", "callID": "call_1", "tool": "bash", "args": {}},
+    )
+
+    assert response.decision == "allow"
+
+
+def test_send_intercepts_a_tool_call_via_a_live_hook_bridge(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Exercises the real OpencodeHookBridge HTTP round trip (not a mocked
+    # http.list_permissions-style stub) by having the fake post_message
+    # itself act like the generated plugin: POST to the bridge's real
+    # base_url mid-turn, the way `tool.execute.before` would.
+    import httpx
+
+    captured_reply = {}
+
+    def fake_post_message(
+        base_url, session_id, cwd, provider_id, model_id, prompt, timeout, **kwargs
+    ):
+        reply = httpx.post(
+            f"{base_url}/tool-hook",
+            json={
+                "sessionID": session_id,
+                "callID": "call_1",
+                "tool": "bash",
+                "args": {"command": "echo hi"},
+            },
+            timeout=5,
+        ).json()
+        captured_reply.update(reply)
+        return {"info": {}, "parts": []}
+
+    monkeypatch.setattr(http, "post_message", fake_post_message)
+
+    adapter = OpencodeServer(poll_interval_seconds=0.01)
+    deployment = deploy_runtime(Agent(instructions="x"), "opencode", tmp_path)
+    try:
+        options = SessionOptions(
+            provider=ProviderOptions(
+                opencode=OpencodeOptions(
+                    policy=RequestPolicy.deny_tools("shell", message="no shell")
+                )
+            )
+        )
+        bridge = adapter._maybe_deploy_hook_bridge(options, deployment)
+        assert bridge is not None
+        internal = _OpencodeSession(
+            process=type("P", (), {"base_url": bridge.base_url})(),
+            session_id="ses_hooktest",
+            cwd=tmp_path,
+            environment=None,
+            db_path=tmp_path / "opencode.db",
+            provider_options=OpencodeOptions(
+                policy=RequestPolicy.deny_tools("shell", message="no shell")
+            ),
+        )
+        adapter._sessions["ses_hooktest"] = internal
+
+        run = adapter._send(
+            internal, turn=Turn(prompt="hi"), model="openai/gpt-5", options=RunOptions()
+        )
+    finally:
+        bridge.stop()
+        deployment.cleanup()
+
+    assert captured_reply["deny"] is True
+    assert captured_reply["message"] == "no shell"
+    resolved = [e for e in run.events if e.kind == EventKind.REQUEST_RESOLVED]
+    assert len(resolved) == 1
+    assert resolved[0].response.decision == "deny"
+
+
+def test_start_session_stops_the_hook_bridge_when_server_startup_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression: _maybe_deploy_hook_bridge runs (and starts the bridge)
+    # before start_opencode_server, since the bridge's URL must go into the
+    # child process's env. Only the http.create_session call afterward was
+    # wrapped in a try/except that stopped the bridge — a startup failure
+    # (missing binary, port exhaustion, timeout) leaked the bridge's thread
+    # and listening socket for the life of the process.
+    import httpx
+
+    from yoke.providers.opencode.process import OpencodeServerStartupError
+
+    real_deploy = OpencodeServer._maybe_deploy_hook_bridge
+    deployed_bridges = []
+
+    def spying_deploy(self, options, deployment):
+        bridge = real_deploy(self, options, deployment)
+        deployed_bridges.append(bridge)
+        return bridge
+
+    def failing_start(*args, **kwargs):
+        raise OpencodeServerStartupError("opencode serve did not start")
+
+    monkeypatch.setattr(OpencodeServer, "_maybe_deploy_hook_bridge", spying_deploy)
+    monkeypatch.setattr(
+        "yoke.providers.opencode_server.start_opencode_server", failing_start
+    )
+
+    adapter = OpencodeServer()
+    deployment = deploy_runtime(Agent(instructions="x"), "opencode", tmp_path)
+    harness_options = SessionOptions(
+        provider=ProviderOptions(
+            opencode=OpencodeOptions(policy=RequestPolicy.allow_all())
+        )
+    )
+    from yoke import Harness
+
+    harness = Harness(
+        provider="opencode",
+        agent=Agent(instructions="x"),
+        cwd=tmp_path / "workspace",
+    )
+    try:
+        with pytest.raises(OpencodeServerStartupError):
+            adapter._start_session(harness, harness_options, deployment)
+    finally:
+        deployment.cleanup()
+
+    assert len(deployed_bridges) == 1
+    bridge = deployed_bridges[0]
+    assert bridge is not None
+    # If the bridge leaked, its ephemeral port would still be listening.
+    # bridge.stop() closes the socket, so a request against it now fails.
+    with pytest.raises(httpx.ConnectError):
+        httpx.post(f"{bridge.base_url}/tool-hook", json={}, timeout=2)

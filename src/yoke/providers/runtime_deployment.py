@@ -16,6 +16,7 @@ from yoke.providers.codex_agents import (
     codex_agent_toml,
     description_for,
     instructions_for,
+    option_mapping,
     slug,
 )
 from yoke.providers.codex_app.prompts import native_subagents
@@ -26,6 +27,7 @@ from yoke.providers.native_skills import (
     native_skill_text,
     skill_directory_name,
 )
+from yoke.providers.opencode.agents import opencode_agent_files
 
 
 @dataclass(slots=True)
@@ -41,6 +43,8 @@ class RuntimeDeployment:
     generated_skill_root: Path | None = None
     claude_plugin_root: Path | None = None
     claude_plugin_name: str | None = None
+    opencode_config_dir: Path | None = None
+    opencode_config_content: str | None = None
 
     def cleanup(self) -> None:
         """Remove only this deployment, never authored files."""
@@ -74,6 +78,8 @@ def deploy_runtime(
     try:
         if provider is Provider.CODEX:
             _write_codex(agent, deployment)
+        elif provider is Provider.OPENCODE:
+            _write_opencode(agent, deployment)
         else:
             _write_claude(agent, deployment)
         return deployment
@@ -105,10 +111,16 @@ def reclaim_stale_deployments(parent: Path) -> None:
 
 def runtime_owner_pid(name: str) -> int | None:
     parts = name.split("-", 3)
-    if len(parts) != 4 or parts[0] != "yoke" or parts[1] not in {
-        Provider.CLAUDE.value,
-        Provider.CODEX.value,
-    }:
+    if (
+        len(parts) != 4
+        or parts[0] != "yoke"
+        or parts[1]
+        not in {
+            Provider.CLAUDE.value,
+            Provider.CODEX.value,
+            Provider.OPENCODE.value,
+        }
+    ):
         return None
     try:
         pid = int(parts[2])
@@ -249,6 +261,68 @@ def _write_claude(agent: Agent, deployment: RuntimeDeployment) -> None:
     manifest.write_text(json.dumps({"name": deployment.root.name}))
     deployment.claude_plugin_root = plugin
     deployment.claude_plugin_name = deployment.root.name
+
+
+def _write_opencode(agent: Agent, deployment: RuntimeDeployment) -> None:
+    # OpenCode discovers skills and custom agents from a config directory
+    # the same shape as its own `.opencode/` project convention
+    # (skills/<name>/SKILL.md, agents/<name>.md), pointed at via
+    # OPENCODE_CONFIG_DIR — no files land in the user's real project, unlike
+    # a naive `.opencode/` write into harness.cwd.
+    config_dir = deployment.root / "opencode_config"
+    skills = config_dir / "skills"
+    wrote_skills = bool(_write_skills(inline_skills(agent), Provider.OPENCODE, skills))
+    wrote_agents = False
+    agent_files = opencode_agent_files(agent, directory="agents")
+    agent_paths = [file.path for file in agent_files]
+    if len(set(agent_paths)) != len(agent_paths):
+        # Mirrors _write_codex's own check: two subagent names that slugify
+        # to the same filename (e.g. "Code Review" and "code-review") would
+        # otherwise silently overwrite one another with no error.
+        raise YokeError(
+            "OpenCode subagents compile to colliding agents/<name>.md paths"
+        )
+    for file in agent_files:
+        path = config_dir / file.path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(file.text)
+        wrote_agents = True
+    wrote_plugins = False
+    for name, source in _opencode_plugin_sources(agent).items():
+        path = config_dir / "plugin" / f"{slug(name)}.js"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(source)
+        wrote_plugins = True
+    if wrote_skills or wrote_agents or wrote_plugins:
+        deployment.opencode_config_dir = config_dir
+    mcp_servers = option_mapping(agent, "mcp_servers")
+    if mcp_servers:
+        # Inline config, not a file: OPENCODE_CONFIG_CONTENT is merged over
+        # every other config source (global, project, OPENCODE_CONFIG_DIR)
+        # at OpenCode's highest precedence, so this doesn't collide with the
+        # skills directory above or clobber a real project's opencode.json.
+        deployment.opencode_config_content = json.dumps({"mcp": mcp_servers})
+
+
+def _opencode_plugin_sources(agent: Agent) -> dict[str, str]:
+    """Return caller-supplied OpenCode plugin JS source, keyed by name.
+
+    Pure pass-through, same as mcp_servers: Yoke does not generate this
+    plugin's contents, only writes what `agent.options["opencode_plugins"]`
+    already contains into a file OpenCode auto-loads. The *generated*
+    tool.execute.before hook plugin (OpencodeHookBridge,
+    providers/opencode/hooks.py) is a different, session-options-driven
+    mechanism and writes its own separate file into the same directory.
+    """
+
+    value = agent.options.get("opencode_plugins")
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(name): source
+        for name, source in value.items()
+        if isinstance(name, str) and isinstance(source, str)
+    }
 
 
 def _write_skills(

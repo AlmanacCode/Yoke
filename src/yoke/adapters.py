@@ -13,6 +13,7 @@ _surface_adapters: dict[tuple[ProviderKey, str], ProviderAdapter] = {}
 _builtin_surfaces: dict[ProviderKey, set[str]] = {
     "claude": {"claude_python_sdk"},
     "codex": {"codex_cli", "codex_python_sdk", "codex_app_server"},
+    "opencode": {"opencode_server"},
 }
 
 
@@ -102,6 +103,15 @@ def default_adapter(provider: Provider, surface: str | None = None) -> ProviderA
         raise AdapterNotFound(
             f"no built-in Yoke adapter for provider {provider!r} surface {surface!r}"
         )
+    if provider_key == "opencode":
+        if surface_key not in (None, "opencode_server"):
+            raise AdapterNotFound(
+                "no built-in Yoke adapter for provider "
+                f"{provider!r} surface {surface!r}"
+            )
+        from yoke.providers.opencode_server import OpencodeServer
+
+        return OpencodeServer()
     raise AdapterNotFound(f"no built-in Yoke adapter for provider {provider!r}")
 
 

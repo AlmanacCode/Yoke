@@ -9,14 +9,16 @@
   <a href="https://peps.python.org/pep-0561/"><img alt="Typed" src="https://img.shields.io/badge/typed-py.typed-2b5b84"></a>
   <a href="https://claude.com/claude-code"><img alt="Claude harness" src="https://img.shields.io/badge/harness-Claude-D97757?logo=anthropic&logoColor=white"></a>
   <a href="https://openai.com/codex/"><img alt="Codex harness" src="https://img.shields.io/badge/harness-Codex-4B68F9?logo=openai&logoColor=white"></a>
+  <a href="https://opencode.ai/"><img alt="OpenCode harness" src="https://img.shields.io/badge/harness-OpenCode-2f855a"></a>
   <a href="https://github.com/AlmanacCode/Yoke/blob/main/LICENSE.md"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-df7b40"></a>
 </p>
 
-**A Python SDK for building agents on Claude Code and Codex.**
+**A Python SDK for building agents on Claude Code, Codex, and OpenCode.**
 
-Claude Code and Codex have become general-purpose agents: give them
-instructions, skills, and subagents, and they can be shaped to any task. Yoke
-lets you reuse them from code — one `Harness` that drives both.
+Claude Code, Codex, and OpenCode have become general-purpose agents: give
+them instructions, skills, and subagents, and they can be shaped to any
+task. Yoke lets you reuse them from code — one `Harness` that drives all
+three.
 
 <p align="center">
   <a href="#quickstart">Quickstart</a> ·
@@ -42,6 +44,9 @@ Install a provider extra when you want Yoke to manage that SDK directly:
 pip install 'almanac-yoke[claude]'  # or [codex], or [all]
 ```
 
+OpenCode needs no extra — it has no Python SDK to install; Yoke drives it
+by spawning `opencode serve` and talking to its HTTP API directly.
+
 Define an agent, pick a harness, run:
 
 ```python
@@ -60,7 +65,9 @@ print(result.output)
 ```
 
 Swap `"codex"` for `"claude"` and the same agent runs there. Your existing
-Claude Code or ChatGPT login is all it needs — no API keys.
+Claude Code or ChatGPT login is all it needs — no API keys. Swap it for
+`"opencode"` and Yoke drives whatever provider your `opencode auth login`
+(or a configured API key) already has set up.
 
 Embedding applications can observe a one-shot run while it is happening:
 
@@ -258,6 +265,7 @@ require an exact one:
 | `codex:sdk` | Codex Python SDK |
 | `codex:cli` | Codex CLI — `codex exec`, resumable threads |
 | `claude:sdk` | Claude Agent SDK for Python |
+| `opencode:server` | OpenCode's local HTTP server — sessions, fork, native skills |
 
 `discover` reports what this machine already has — surfaces installed, logins
 ready, models available — and picks the first ready surface satisfying the

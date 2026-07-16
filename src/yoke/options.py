@@ -800,6 +800,64 @@ class CodexAppServerOptions(YokeModel):
         return capabilities
 
 
+class OpencodeOptions(YokeModel):
+    """Typed OpenCode options plus raw escape hatch.
+
+    `policy`/`request_handler` answer permissions OpenCode's session marked
+    "ask" (see Permissions.approval) — discovered live via GET /permission
+    and answered via POST /permission/:id/reply, both poll-based like the
+    rest of this adapter, not SSE-based.
+    """
+
+    policy: RequestPolicy | dict[str, Any] | None = None
+    request_handler: Any | None = Field(
+        default=None,
+        exclude=True,
+        json_schema_extra={
+            "runtime_only": True,
+            "reason": (
+                "Callbacks are live Python objects. Configure request_handler "
+                "in SDK code, not in a Yoke folder."
+            ),
+        },
+    )
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+    def runtime_options(self) -> tuple[RuntimeOption, ...]:
+        """Return active SDK-only fields that will not round-trip through folders."""
+
+        return runtime_options(self)
+
+    def features(self) -> tuple[Feature, ...]:
+        """Return provider features implied by OpenCode options."""
+
+        from yoke.capabilities import Feature
+
+        features: list[Feature] = []
+        if self.request_handler is not None or self.policy is not None:
+            features.append(Feature.REQUEST_EVENTS)
+        if self.raw.get("request_handler") is not None:
+            features.append(Feature.REQUEST_EVENTS)
+        if self.raw.get("requestHandler") is not None:
+            features.append(Feature.REQUEST_EVENTS)
+        if self.raw.get("policy") is not None:
+            features.append(Feature.REQUEST_EVENTS)
+        deduped: list[Feature] = []
+        extend_unique(deduped, tuple(features))
+        return tuple(deduped)
+
+
+def opencode_request_handler(options: OpencodeOptions | dict[str, Any] | None) -> Any:
+    """Return the caller's OpenCode permission handler, typed or raw."""
+
+    if isinstance(options, OpencodeOptions):
+        return options.request_handler or options.policy
+    if isinstance(options, dict):
+        handler = options.get("request_handler") or options.get("requestHandler")
+        return handler if handler is not None else options.get("policy")
+    return None
+
+
 class ProviderOptions(YokeModel):
     """Provider-specific options.
 
@@ -809,6 +867,9 @@ class ProviderOptions(YokeModel):
 
     claude: ClaudeOptions | dict[str, Any] = Field(default_factory=ClaudeOptions)
     codex: CodexOptions | dict[str, Any] = Field(default_factory=CodexOptions)
+    opencode: OpencodeOptions | dict[str, Any] = Field(
+        default_factory=OpencodeOptions
+    )
 
     def runtime_options(self) -> tuple[RuntimeOption, ...]:
         """Return active SDK-only fields that will not round-trip through folders."""
@@ -823,6 +884,10 @@ class ProviderOptions(YokeModel):
             extend_unique(features, provider_option_features(self.claude, "claude"))
         if provider in (None, "codex"):
             extend_unique(features, provider_option_features(self.codex, "codex"))
+        if provider in (None, "opencode"):
+            extend_unique(
+                features, provider_option_features(self.opencode, "opencode")
+            )
         return tuple(features)
 
 
@@ -831,10 +896,24 @@ def provider_option_features(options: object, provider: str) -> tuple[Feature, .
 
     from yoke.capabilities import Feature
 
-    if isinstance(options, (ClaudeOptions, CodexOptions)):
+    if isinstance(options, (ClaudeOptions, CodexOptions, OpencodeOptions)):
         return options.features()
     if not isinstance(options, dict):
         return ()
+    if provider == "opencode":
+        features: list[Feature] = []
+        if options.get("request_handler") is not None:
+            features.append(Feature.REQUEST_EVENTS)
+        if options.get("requestHandler") is not None:
+            features.append(Feature.REQUEST_EVENTS)
+        if options.get("policy") is not None:
+            features.append(Feature.REQUEST_EVENTS)
+        raw = options.get("raw")
+        if isinstance(raw, dict):
+            extend_unique(features, provider_option_features(raw, provider))
+        deduped: list[Feature] = []
+        extend_unique(deduped, tuple(features))
+        return tuple(deduped)
     if provider == "claude":
         features: list[Feature] = []
         if options.get("permission_mode") is not None:

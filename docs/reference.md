@@ -1545,6 +1545,7 @@ Yoke models capabilities by surface, not only by provider.
 | Codex | `codex_python_sdk` | `sdk` | `codex_app_server` | published Python SDK, app-server-backed automation surface |
 | Codex | `codex_typescript_sdk` | `sdk` | `codex_sdk` | documented TypeScript SDK over local Codex agents; tracked, no built-in adapter yet |
 | Codex | `codex_app_server` | `app_server` | `codex_app_server` | live app protocol, streaming, skill roots, plugins, goals, collab agent events |
+| OpenCode | `opencode_server` | `app_server` | `opencode_server` | locally spawned HTTP server, real sessions/fork/rename/compact, native skills, poll-based live events |
 
 `Surface` intentionally names documented entrypoints even before Yoke ships a
 built-in adapter for each one. That keeps design discussions precise: a feature
