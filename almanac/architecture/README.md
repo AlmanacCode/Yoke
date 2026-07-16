@@ -20,6 +20,10 @@ the [Yoke Harness](../concepts/yoke-harness), [Runs And Sessions](../concepts/ru
 [CLI And Run Storage](../reference/cli-and-run-storage) pages into one
 execution path.
 
+Read [Runtime Deployments](runtime-deployments) when a change touches
+generated provider files, `runtime_root`, cleanup, or the split between live
+provider projections and durable bundle exports.
+
 Read [Capability Planning](capability-planning) when a change adds or changes
 features that depend on the selected provider surface. It explains how agent
 and option requirements become a surface plan before provider execution starts.

@@ -90,6 +90,9 @@ that is safe to keep after the temporary files are removed [@provider-audit].
 That keeps the provider projection reproducible without treating generated
 files as source material.
 
+See [Runtime Deployments](runtime-deployments) for the focused cleanup,
+ownership, and bundle-export boundary.
+
 ## Codex App-Server Startup State
 
 The Codex app-server adapter starts `codex app-server --listen stdio://`, sends
