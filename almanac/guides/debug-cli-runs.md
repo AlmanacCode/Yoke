@@ -55,9 +55,9 @@ session id, stored paths, and event count [@store].
 
 Check these fields before opening provider transcripts. A wrong `cwd`,
 collection, agent, provider, or surface usually points to command construction
-or collection loading. A missing provider session id can be normal when the
-provider did not report one, because Yoke stores it only when the result or
-events expose it [@store].
+or collection loading. A missing provider session id can be normal because
+`record.json` stores that id only from the attached session, not from the
+event-derived fallback on `Run.provider_session_id` [@store].
 
 ## Read Events When Behavior Is Unclear
 
@@ -71,6 +71,10 @@ yoke events <run_id> --store .yoke | rg '"kind":'
 No `events.jsonl` file does not always mean no run happened. The store writes
 that file only when the completed run or workflow result contains normalized
 events [@store].
+
+If the provider session id was learned only from the event stream, inspect
+`result.json` or `events.jsonl` instead of relying on the top-level
+`record.json` metadata [@store].
 
 ## Separate Execution From Storage
 

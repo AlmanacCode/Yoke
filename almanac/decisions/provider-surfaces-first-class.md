@@ -61,5 +61,6 @@ another, and unsupported on a third, the matrix should say that directly
 
 Concept pages can explain what provider surfaces are, while this page records
 the architectural constraint. See [Provider Surfaces](../concepts/provider-surfaces)
-for the current model and [Runtime Flow](../architecture/runtime-flow) for the
-execution path that uses the plan.
+for the current model, [Capability Planning](../architecture/capability-planning)
+for the selection and validation rules, and [Runtime Flow](../architecture/runtime-flow)
+for the execution path that uses the plan.

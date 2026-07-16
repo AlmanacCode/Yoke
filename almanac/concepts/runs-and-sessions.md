@@ -40,10 +40,10 @@ The distinction is simple: the session is the conversation handle, the turn is o
 
 `RunStore` writes an inspectable snapshot under `.yoke/runs/<run_id>/` [@store]. A stored run has `record.json`, `result.json`, and optionally `events.jsonl`; workflow results use the same store and collect events from their step runs [@store]. [CLI And Run Storage](../reference/cli-and-run-storage) defines the shell commands that create and inspect those snapshots.
 
-A stored record keeps metadata such as kind, provider, surface, status, cwd, agent, collection, provider session id, paths, and event count [@store].
+A stored record keeps metadata such as kind, provider, surface, status, cwd, agent, collection, provider session id, paths, and event count [@store]. For one-shot runs and workflows, the stored record gets that provider session id only from the attached session on the run or workflow step, while `Run.provider_session_id` can still fall back to event-derived ids inside the result model [@store] [@models].
 
 [Runtime Flow](../architecture/runtime-flow) explains where this snapshot step sits in the larger execution path.
 
 ## Workflow runs
 
-Workflows have their own result model, `WorkflowRun`. It records the workflow name, run mode, optional run id, provider, surface, status, step results, traces, output, data, and failure [@models]. When stored, `RunStore` marks the record kind as `workflow` and derives the provider session id from the first workflow step that has one [@store]. See [Workflows](workflows) for the orchestration model that produces those results.
+Workflows have their own result model, `WorkflowRun`. It records the workflow name, run mode, optional run id, provider, surface, status, step results, traces, output, data, and failure [@models]. When stored, `RunStore` marks the record kind as `workflow` and derives the record's provider session id from the first workflow step with an attached session provider id [@store]. See [Workflows](workflows) for the orchestration model that produces those results.

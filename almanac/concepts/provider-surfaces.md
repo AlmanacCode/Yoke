@@ -21,6 +21,9 @@ sources:
   - id: capability-tests
     type: file
     path: tests/test_capabilities.py
+  - id: status
+    type: file
+    path: src/yoke/status.py
 ---
 
 # Provider Surfaces
@@ -46,6 +49,8 @@ Capabilities are expressed as features with support levels. The `Feature` enum i
 Each feature has a support value: `native`, `compiled`, `emulated`, `unsupported`, or `unknown` [@capabilities]. Reports can also include notes, lowering descriptions, recipes, and evidence for a feature on a surface [@surfaces]. The runtime selection rules are covered in [Capability Planning](../architecture/capability-planning).
 
 Feature support also changes how Yoke explains product-facing promises. The README says skills may be native skill roots on the Codex app-server but compiled to files on other surfaces, Codex app-server subagents are compiled into guidance to use native `spawn_agent`, goals are native state only on the Codex app-server, and workflows are portable Yoke constructs across the listed surfaces [@readme]. These are not marketing distinctions; they are the support levels and lowering descriptions that `harness.explain()` exposes through the capability matrix [@surfaces].
+
+The same matrix feeds `Status`, which combines local readiness with semantic reports for goals, workflows, subagents, skills, controls, permissions, history, and exposure [@status]. Those reports answer a different question than raw feature rows: whether a surface behaves like provider-native state, portable Yoke orchestration, compiled context, external auth, or unsupported capability [@status].
 
 Run event callbacks show the planning rule in a small form. `RunOptions(on_event=...)` requires `run_event_callbacks`; capability tests show automatic Codex planning chooses `codex_app_server`, automatic Claude planning chooses `claude_python_sdk`, and explicit Codex CLI or Codex Python SDK selections fail before a provider run starts [@capability-tests]. See [Normalized Events](normalized-events) for the event objects delivered through that callback.
 

@@ -27,6 +27,9 @@ sources:
   - id: storage-transcript
     type: conversation
     path: /Users/rohan/.codex/sessions/2026/07/10/rollout-2026-07-10T19-50-43-019f4f15-9750-7373-bf99-6eb61ab7ab46.jsonl
+  - id: status
+    type: file
+    path: src/yoke/status.py
 ---
 
 # CLI And Run Storage
@@ -46,7 +49,7 @@ For a task-oriented inspection path, read [Debug CLI Runs](../guides/debug-cli-r
 
 `yoke explain <collection> <agent>` loads the same collection agent but does not call the provider. It prints the harness explanation JSON, including requested features supplied with repeated `--feature` flags [@cli].
 
-`yoke status <collection> <agent>` calls the selected harness status check and prints readiness plus capability sections for goals, workflows, subagents, skills, control, permissions, history, and exposure [@cli]. Use it when a caller needs machine-readable readiness and semantic support details before running an agent.
+`yoke status <collection> <agent>` calls the selected harness status check and prints readiness plus capability sections for goals, workflows, subagents, skills, control, permissions, history, and exposure [@cli] [@status]. Use it when a caller needs machine-readable readiness and semantic support details before running an agent. [Provider Surfaces](../concepts/provider-surfaces) explains why those sections are surface-specific rather than provider-wide.
 
 `yoke install <collection> <agent>` writes provider-native bundle files for a folder-authored agent [@cli]. It requires either `--provider` or a collection `default_provider`, accepts an optional `--surface`, and delegates the write to the same bundle path exposed by `agent.bundle(...)` [@cli] [@reference].
 
@@ -54,9 +57,9 @@ For a task-oriented inspection path, read [Debug CLI Runs](../guides/debug-cli-r
 
 `RunStore.at(path)` treats `path` as the store root and writes run directories under `path/runs/` [@store]. The default CLI store is `.yoke`, so default CLI executions write under `.yoke/runs/<run_id>/` [@cli] [@store].
 
-Each stored result has `record.json` and `result.json`; `events.jsonl` exists only when the run or workflow has normalized events [@store]. `record.json` is the inspection index. It records the generated Yoke run id, kind, provider, surface, status, cwd, agent, collection, provider session id, paths to stored files, and event count [@store]. For one-shot runs, that index value comes from the attached `Session.provider_session_id`; the `Run.provider_session_id` model property can also fall back to the newest event that carries a provider session id [@store] [@models]. `result.json` stores the provider-neutral result without volatile raw provider objects, and `events.jsonl` stores normalized events as JSON Lines without raw provider objects [@store].
+Each stored result has `record.json` and `result.json`; `events.jsonl` exists only when the run or workflow has normalized events [@store]. `record.json` is the inspection index. It records the generated Yoke run id, kind, provider, surface, status, cwd, agent, collection, provider session id, paths to stored files, and event count [@store]. For one-shot runs, that index value comes only from the attached `Session.provider_session_id`; the `Run.provider_session_id` model property can fall back to the newest event that carries a provider session id, but `record.json` does not use that fallback [@store] [@models]. `result.json` stores the provider-neutral result without volatile raw provider objects, and `events.jsonl` stores normalized events as JSON Lines without raw provider objects [@store].
 
-Workflow results use the same store. The record kind becomes `workflow`, workflow events are collected from step runs, and the stored provider session id is the first provider session id found in those step runs [@store] [@store-tests].
+Workflow results use the same store. The record kind becomes `workflow`, workflow events are collected from step runs, and the stored provider session id is the first attached session provider id found in those step runs [@store] [@store-tests].
 
 ## Storage lifecycle limits
 

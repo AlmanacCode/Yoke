@@ -18,6 +18,9 @@ sources:
   - id: capability-tests
     type: file
     path: tests/test_capabilities.py
+  - id: status
+    type: file
+    path: src/yoke/status.py
 ---
 
 # Capability Planning
@@ -37,6 +40,8 @@ Yoke keeps a profile for each known provider surface. A profile carries the prov
 When a harness has an explicit surface, planning validates that surface against the required features and reports missing support instead of silently switching surfaces [@models]. When the surface is omitted, planning can select the best known surface for the required features, optional channel, and runnable constraint [@models] [@surfaces].
 
 Selection ranks candidate profiles by how well they satisfy the required features and by their total capability score [@surfaces]. Tests cover the important behavior: `run_event_callbacks` selects Codex app-server or Claude Python SDK automatically, explicit unsupported Codex surfaces fail before a run starts, native Claude workflow requests can select a non-runnable TypeScript SDK profile unless `runnable=True` is required, and unsupported feature sets raise diagnostics that list considered surfaces [@capability-tests].
+
+Status reporting uses the same surface report after readiness checks. `Status` exposes `support_for(...)` for raw feature lookup, then groups related features into goal, workflow, subagent, skill, control, permission, history, and exposure reports [@status]. Planning is still the gate before execution; status is the inspection layer a CLI or product can show before deciding which surface to ask for.
 
 ## Why It Matters
 

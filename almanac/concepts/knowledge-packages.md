@@ -33,7 +33,7 @@ The design direction is that a complete agent package can declare both procedure
 
 ## Almanac Boundary
 
-The proposed split gives `codealmanac` and Almanac a clear role beside Yoke. Almanac can create, maintain, and validate the knowledge body, while Yoke attaches that body to an agent and lowers access onto Claude or Codex surfaces [@knowledge-transcript]. In this model, an Almanac wiki can become a knowledge source exposed through an API or MCP boundary, while smaller knowledge bundles can be mounted as local files or searched through deterministic tools [@knowledge-transcript].
+The proposed split gives `codealmanac` and Almanac a clear role beside Yoke. Almanac can create, maintain, and validate the knowledge body, while Yoke attaches that body to an agent and lowers access onto Claude or Codex surfaces [@knowledge-transcript]. [codealmanac Integration](../architecture/codealmanac-integration) records the current product boundary that would consume this future primitive. In this model, an Almanac wiki can become a knowledge source exposed through an API or MCP boundary, while smaller knowledge bundles can be mounted as local files or searched through deterministic tools [@knowledge-transcript].
 
 This boundary follows the same provider-neutral rule as the [Yoke Harness](yoke-harness): Yoke should report how the selected surface receives the knowledge rather than pretending every provider has a native knowledge-pack feature. A small bundle may be compiled to local files, a larger bundle may require search tools, and an Almanac wiki may require a connector or MCP server [@knowledge-transcript].
 
