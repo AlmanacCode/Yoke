@@ -893,7 +893,7 @@ class Workflow(YokeModel):
         if self.native_name is not None:
             data["name"] = self.native_name
         if self.script_path is not None:
-            data["scriptPath"] = str(self.script_path)
+            data["scriptPath"] = self.script_path.as_posix()
         if self.args is not None:
             data["args"] = self.args
         if self.resume_from_run_id is not None:
